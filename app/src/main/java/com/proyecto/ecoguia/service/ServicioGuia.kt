@@ -152,9 +152,9 @@ class ServicioGuia : Service() {
                 motor = MotorGuia(
                     ruta = ruta,
                     estimador = EstimadorTiempo(velocidad),
-                    // ultimo_nodo_id se marca a 15 m; se retoma apuntando a ese nodo y el motor
-                    // lo da por alcanzado con su propio umbral (o al avanzar por el tramo siguiente).
-                    indiceInicial = indiceUltimo.coerceAtLeast(0)
+                    // Se retoma en el nodo siguiente al último registrado. Si ese último es el destino
+                    // (marcado a 15 m), se sigue apuntando a él para no dar la llegada por hecha.
+                    indiceInicial = if (indiceUltimo >= 0) (indiceUltimo + 1).coerceAtMost(ruta.puntos.lastIndex) else 0
                 )
                 // Una ruta nueva no hereda el recorrido simulado de la anterior.
                 trabajoSimulacion?.cancel()
