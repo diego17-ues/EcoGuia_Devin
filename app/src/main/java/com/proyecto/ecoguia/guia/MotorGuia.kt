@@ -158,7 +158,15 @@ class MotorGuia(
         val (xP, yP) = planoLocal(nodo, posicion)
         val (xS, yS) = planoLocal(nodo, siguiente)
         val avance = (xP * xS + yP * yS) / longitudTramo
-        return avance > 0.0 && Haversine.distanciaMetros(posicion, siguiente) < longitudTramo
+        if (avance <= 0.0 || Haversine.distanciaMetros(posicion, siguiente) >= longitudTramo) return false
+        // En giros cerrados (ida y vuelta) el tramo de llegada también "avanza" por el de salida:
+        // se exige haber recorrido el tramo de llegada hasta el umbral del nodo.
+        val anterior = puntos.getOrNull(indice - 1)?.coordenada ?: return true
+        val longitudLlegada = Haversine.distanciaMetros(anterior, nodo)
+        val (xA, yA) = planoLocal(anterior, posicion)
+        val (xN, yN) = planoLocal(anterior, nodo)
+        val avanceLlegada = if (longitudLlegada > 0.0) (xA * xN + yA * yN) / longitudLlegada else longitudLlegada
+        return avanceLlegada >= longitudLlegada - umbralLlegadaNodoMetros
     }
 
     private fun planoLocal(origen: Coordenada, punto: Coordenada): Pair<Double, Double> {

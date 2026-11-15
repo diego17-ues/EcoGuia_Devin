@@ -132,4 +132,24 @@ class MotorGuiaTest {
         assertTrue(motor.actualizar(null, null).finalizada)
         assertEquals(setOf(Indicacion.IZQUIERDA, Indicacion.DERECHA, Indicacion.RECTO), indicaciones)
     }
+
+    @Test
+    fun noSeSaltaLaEsquinaEnUnGiroDeIdaYVuelta() {
+        val esquina = Haversine.destino(inicio, 0.0, 100.0)
+        val fin = Haversine.destino(Haversine.destino(esquina, 90.0, 4.0), 180.0, 90.0)
+        val motor = MotorGuia(
+            RutaGuia(
+                id = 2,
+                nombre = "Ida y vuelta",
+                puntos = listOf(
+                    PuntoRuta(1, "Inicio", "Inicio", "", inicio),
+                    PuntoRuta(2, "Esquina", "Giro", "", esquina),
+                    PuntoRuta(3, "Fin", "Destino", "", fin)
+                )
+            )
+        )
+        val estado = motor.actualizar(Haversine.destino(inicio, 0.0, 50.0), 0.0)
+        assertEquals(1, estado.indiceObjetivo)
+        assertEquals(Indicacion.RECTO, estado.indicacion)
+    }
 }
