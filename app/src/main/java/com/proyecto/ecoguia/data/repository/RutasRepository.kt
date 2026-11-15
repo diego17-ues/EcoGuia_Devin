@@ -62,6 +62,11 @@ private data class NodoRutaOrdenFila(
 )
 
 @Serializable
+private data class RutaNombreFila(
+    val nombre: String
+)
+
+@Serializable
 private data class AristaRutaFila(
     val ruta_id: Long,
     val origen: Long,
@@ -78,17 +83,29 @@ class RutasRepository {
         NoVidenteRepository()
 
     suspend fun listarRutasDisponibles(): List<RutaDisponible> {
-        usuarioRepository.validarSesionNoVidente()
+        val usuarioId = usuarioRepository.obtenerIdAutenticado()
         val rutas = supabase.postgrest["rutas"].select {
+            filter { eq("usuario_id", usuarioId) }
             order("nombre", Order.ASCENDING)
         }.decodeList<RutaDisponible>()
         return cargarGeometria(rutas)
     }
 
+    suspend fun listarNombresRutasDisponibles(): List<String> {
+        val usuarioId = usuarioRepository.obtenerIdAutenticado()
+        return supabase.postgrest["rutas"].select {
+            filter { eq("usuario_id", usuarioId) }
+            order("nombre", Order.ASCENDING)
+        }.decodeList<RutaNombreFila>().map { it.nombre }
+    }
+
     suspend fun obtenerRutaDisponible(rutaId: Long): RutaDisponible? {
-        usuarioRepository.validarSesionNoVidente()
+        val usuarioId = usuarioRepository.obtenerIdAutenticado()
         val ruta = supabase.postgrest["rutas"].select {
-            filter { eq("id", rutaId) }
+            filter {
+                eq("id", rutaId)
+                eq("usuario_id", usuarioId)
+            }
         }.decodeList<RutaDisponible>().firstOrNull() ?: return null
         return cargarGeometria(listOf(ruta)).firstOrNull()
     }
