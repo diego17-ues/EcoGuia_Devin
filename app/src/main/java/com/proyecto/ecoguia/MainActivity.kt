@@ -9,7 +9,6 @@ import android.speech.RecognizerIntent
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.view.HapticFeedbackConstants
-import android.widget.Toast
 
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.mapbox.common.MapboxOptions
 import com.proyecto.ecoguia.service.SesionGuia
 import com.proyecto.ecoguia.data.repository.AuthRepository
+import com.proyecto.ecoguia.data.repository.RutasRepository
 import com.proyecto.ecoguia.screen.*
 import com.proyecto.ecoguia.ui.theme.EcoGuiaTheme
 
@@ -64,6 +64,10 @@ class MainActivity : FragmentActivity() {
                     mutableStateOf<Long?>(null)
                 }
 
+                var rutaIniciadaNombre by remember {
+                    mutableStateOf<String?>(null)
+                }
+
                 val repoEncargado = remember {
                     AuthRepository()
                 }
@@ -92,6 +96,14 @@ class MainActivity : FragmentActivity() {
                     mutableStateOf(false)
                 }
 
+                var mensajeVozPendiente by remember {
+                    mutableStateOf<String?>(null)
+                }
+
+                var rutasDisponiblesVoz by remember {
+                    mutableStateOf<List<String>>(emptyList())
+                }
+
                 DisposableEffect(contexto) {
 
                     val motor = TextToSpeech(
@@ -110,7 +122,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                fun hablar(mensaje: String) {
+                fun hablar(mensaje: String, agregarACola: Boolean = false) {
 
                     val motor = motorVoz
 
@@ -120,18 +132,92 @@ class MainActivity : FragmentActivity() {
 
                         motor.speak(
                             mensaje,
-                            TextToSpeech.QUEUE_FLUSH,
+                            if (agregarACola) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH,
                             null,
                             "ecoguia_navegacion"
                         )
 
                     } else {
+                        mensajeVozPendiente = if (agregarACola) {
+                            listOfNotNull(mensajeVozPendiente, mensaje)
+                                .joinToString(" ")
+                        } else {
+                            mensaje
+                        }
+                    }
+                }
 
-                        Toast.makeText(
-                            contexto,
+                LaunchedEffect(vozPreparada, mensajeVozPendiente) {
+                    val mensaje = mensajeVozPendiente
+                    val motor = motorVoz
+                    if (vozPreparada && motor != null && mensaje != null) {
+                        mensajeVozPendiente = null
+                        motor.language = Locale("es", "SV")
+                        motor.speak(
                             mensaje,
-                            Toast.LENGTH_LONG
-                        ).show()
+                            TextToSpeech.QUEUE_FLUSH,
+                            null,
+                            "ecoguia_navegacion_pendiente"
+                        )
+                    }
+                }
+
+                LaunchedEffect(pantalla) {
+                    val pantallaAnunciada = pantalla
+                    val pantallasNoVidente = setOf(
+                        "principal_ciego",
+                        "seleccionar_ruta",
+                        "agregar_ruta",
+                        "ruta_en_curso",
+                        "ajustes_no_vidente"
+                    )
+                    val anuncioPantalla = when (pantallaAnunciada) {
+                        "principal_ciego" ->
+                            "${rutaIniciadaNombre?.let { "Has iniciado la ruta $it. " }.orEmpty()}Inicio de persona no vidente. Puedes seleccionar una ruta, agregar una ruta, consultar la ruta actual o abrir ajustes. Toca el asistente de voz y di qué deseas hacer."
+                        "seleccionar_ruta" ->
+                            "Selección de ruta. Puedes escuchar las rutas disponibles, elegir una, revisar su mapa, distancia y tiempo estimado, y confirmar el inicio cuando estés en el primer punto. También puedes volver al inicio o abrir ajustes."
+                        "agregar_ruta" ->
+                            "Agregar ruta. Puedes escribir el nombre y la descripción, capturar puntos con el GPS, revisar los puntos agregados y guardar la ruta. También puedes volver al inicio o abrir ajustes."
+                        "ruta_en_curso" ->
+                            "Ruta en curso. Puedes consultar el avance, el último punto alcanzado, el siguiente punto y el estado del dispositivo EcoGuía. También puedes reintentar la guía, finalizar o cancelar el recorrido."
+                        "ajustes_no_vidente" ->
+                            "Ajustes de persona no vidente. Puedes escuchar la guía rápida, configurar los avisos sonoros, vincular a tu encargado y volver al inicio."
+                        "principal_encargado" ->
+                            "Inicio de encargado. Puedes rastrear a una persona vinculada, vincular a una persona no vidente o abrir ajustes."
+                        "vincular_encargado" ->
+                            "Vincular persona no vidente. Puedes generar o ingresar un código de vinculación, consultar el estado y volver al inicio."
+                        "seguimiento" ->
+                            "Rastreo. Puedes ver la ubicación y el recorrido observado de las personas vinculadas, consultar la ruta y su hora estimada de llegada, recargar la búsqueda si no aparece nadie y enviar ayuda."
+                        "ajustes_encargado" ->
+                            "Ajustes de encargado. Puedes revisar las opciones de cuenta y ubicación compartida, y volver al inicio."
+                        else -> null
+                    }
+
+                    if (anuncioPantalla != null) {
+                        hablar(anuncioPantalla)
+                    }
+
+                    if (pantallaAnunciada in pantallasNoVidente) {
+                        val resultadoRutas = runCatching {
+                            RutasRepository().listarNombresRutasDisponibles()
+                        }
+
+                        if (pantalla == pantallaAnunciada) {
+                            rutasDisponiblesVoz = resultadoRutas.getOrDefault(emptyList())
+                            val avisoRutas = resultadoRutas.fold(
+                                onSuccess = { nombresRutas ->
+                                    if (nombresRutas.isEmpty()) {
+                                        "No tienes rutas guardadas disponibles."
+                                    } else {
+                                        "Rutas disponibles: ${nombresRutas.joinToString(", ")}."
+                                    }
+                                },
+                                onFailure = {
+                                    "No se pudieron consultar las rutas en este momento."
+                                }
+                            )
+                            hablar(avisoRutas, agregarACola = true)
+                        }
                     }
                 }
 
@@ -245,8 +331,13 @@ class MainActivity : FragmentActivity() {
                             hablar("No pude entenderte. Inténtalo de nuevo.")
                         } else {
                             val esEncargado = pantalla == "principal_encargado"
-                            val esNoVidente = pantalla == "principal_ciego" ||
-                                    pantalla == "seleccionar_ruta"
+                            val esNoVidente = pantalla in setOf(
+                                "principal_ciego",
+                                "seleccionar_ruta",
+                                "agregar_ruta",
+                                "ruta_en_curso",
+                                "ajustes_no_vidente"
+                            )
 
                             when {
                                 frase.contains("ayuda") ||
@@ -256,8 +347,14 @@ class MainActivity : FragmentActivity() {
                                     hablar(
                                         if (esEncargado)
                                             "Puedes decir: rastrear, vincular con no vidente, abrir ajustes, o volver."
-                                        else
-                                            "Puedes decir: elegir ruta, agregar ruta, ruta actual, abrir ajustes, ir al inicio, o volver."
+                                        else {
+                                            val rutas = if (rutasDisponiblesVoz.isEmpty()) {
+                                                "No tienes rutas guardadas disponibles."
+                                            } else {
+                                                "Rutas disponibles: ${rutasDisponiblesVoz.joinToString(", ")}."
+                                            }
+                                            "Puedes decir: elegir ruta, agregar ruta, ruta actual, abrir ajustes, ir al inicio o volver. $rutas"
+                                        }
                                     )
                                 }
 
@@ -489,10 +586,6 @@ class MainActivity : FragmentActivity() {
                             onIniciarSesion = {
                                 ultimoAtras = 0L
                                 pantalla = "principal_ciego"
-
-                                hablar(
-                                    "Has ingresado correctamente"
-                                )
                             }
                         )
 
@@ -583,27 +676,30 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onSeleccionarRuta = { _, seguimientoId, nombreRuta ->
                                     seguimientoIdActual = seguimientoId
+                                    rutaIniciadaNombre = nombreRuta
                                     // La guía arranca ya, para validar el rumbo con el MPU desde el
                                     // primer paso y no recién al abrir "Ruta en curso".
                                     SesionGuia.iniciar(contexto, seguimientoId)
                                     pantalla = "principal_ciego"
-                                    hablar("Has iniciado la ruta $nombreRuta")
                                 },
                                 onAjustesClick = {
                                     pantalla = "ajustes_no_vidente"
                                 },
-                                onAsistenteVozClick = { iniciarAsistenteVoz() }
+                                onAsistenteVozClick = { iniciarAsistenteVoz() },
+                                onMensajeVoz = { mensaje -> hablar(mensaje) }
                             )
 
                         // Visualizar ruta en curso
                         "ruta_en_curso" ->
                             RutaEnCursoScreen(
                                 seguimientoIdInicial = seguimientoIdActual,
+                                onMensajeVoz = { mensaje -> hablar(mensaje, agregarACola = true) },
                                 onVolver = {
                                     pantalla = "principal_ciego"
                                 },
                                 onFinalizada = {
                                     seguimientoIdActual = null
+                                    rutaIniciadaNombre = null
                                     pantalla = "principal_ciego"
                                 }
                             )

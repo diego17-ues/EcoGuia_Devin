@@ -73,7 +73,8 @@ fun SeleccionarRutaScreen(
     onVolver: () -> Unit,
     onSeleccionarRuta: (rutaId: Long, seguimientoId: Long, nombreRuta: String) -> Unit,
     onAjustesClick: () -> Unit = {},
-    onAsistenteVozClick: () -> Unit = {}
+    onAsistenteVozClick: () -> Unit = {},
+    onMensajeVoz: (String) -> Unit = {}
 ) {
     val rutasRepository = remember { RutasRepository() }
     val seguimientoRepository = remember { SeguimientoRepository() }
@@ -112,12 +113,19 @@ fun SeleccionarRutaScreen(
                     }
                     is ResultadoInicio.FueraDeInicio -> {
                         error = ValidadorInicio.MENSAJE_FUERA_DE_INICIO
-                        avisoFueraDeInicio = "Estás a ${formatearDistancia(resultado.distanciaMetros)} " +
+                        val detalle = "Estás a ${formatearDistancia(resultado.distanciaMetros)} " +
                                 "del nodo de inicio \"${inicio?.nombre.orEmpty()}\"."
+                        avisoFueraDeInicio = detalle
+                        onMensajeVoz("${ValidadorInicio.MENSAJE_FUERA_DE_INICIO}. $detalle")
                     }
-                    ResultadoInicio.SinUbicacion -> error = ValidadorInicio.MENSAJE_SIN_UBICACION
-                    ResultadoInicio.RutaSinNodos ->
+                    ResultadoInicio.SinUbicacion -> {
+                        error = ValidadorInicio.MENSAJE_SIN_UBICACION
+                        onMensajeVoz(ValidadorInicio.MENSAJE_SIN_UBICACION)
+                    }
+                    ResultadoInicio.RutaSinNodos -> {
                         error = "No se puede confirmar: la ruta no tiene un orden válido de nodos."
+                        onMensajeVoz(error.orEmpty())
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e

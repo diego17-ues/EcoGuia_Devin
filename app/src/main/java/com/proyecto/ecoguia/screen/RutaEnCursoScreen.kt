@@ -58,7 +58,8 @@ private val localeEspanol = Locale.forLanguageTag("es-SV")
 fun RutaEnCursoScreen(
     onVolver: () -> Unit,
     onFinalizada: () -> Unit,
-    seguimientoIdInicial: Long? = null
+    seguimientoIdInicial: Long? = null,
+    onMensajeVoz: (String) -> Unit = {}
 ) {
     val repository = remember { SeguimientoRepository() }
     val scope = rememberCoroutineScope()
@@ -105,6 +106,18 @@ fun RutaEnCursoScreen(
             }
             delay(10_000)
         }
+    }
+
+    LaunchedEffect(ruta?.seguimientoId) {
+        val actual = ruta ?: return@LaunchedEffect
+        val mensajeSiguiente = actual.siguienteNodoNombre?.let {
+            "El siguiente punto es $it."
+        } ?: "Has llegado al destino final."
+        onMensajeVoz(
+            "La ruta actual es ${actual.nombreRuta}. Avance de ${actual.progresoPorcentaje} por ciento. " +
+                    "$mensajeSiguiente " +
+                    "Puedes escuchar el estado del dispositivo, revisar el mapa, reintentar la guía, finalizar o cancelar el recorrido."
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
