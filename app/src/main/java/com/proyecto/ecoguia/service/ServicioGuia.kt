@@ -103,13 +103,13 @@ class ServicioGuia : Service() {
             }
             ACTION_SIMULACION -> {
                 cambiarSimulacion(intent.getBooleanExtra(EXTRA_SIMULACION, false))
-                return START_NOT_STICKY
+                return modoReinicio()
             }
             ACTION_VELOCIDAD -> {
                 val velocidad = intent.getDoubleExtra(EXTRA_VELOCIDAD, ConfigGuia.VELOCIDAD_CAMINATA_POR_DEFECTO_MS)
                 motor?.estimador = EstimadorTiempo(velocidad)
                 SesionGuia.actualizar { it.copy(velocidadMetrosSegundo = velocidad) }
-                return START_NOT_STICKY
+                return modoReinicio()
             }
         }
 
@@ -120,6 +120,9 @@ class ServicioGuia : Service() {
         cargarSesion(solicitado)
         return START_STICKY
     }
+
+    // Android usa el último valor devuelto: con sesión activa debe seguir reiniciándose.
+    private fun modoReinicio() = if (motor != null || trabajoCarga?.isActive == true) START_STICKY else START_NOT_STICKY
 
     private fun cargarSesion(seguimientoSolicitado: Long?) {
         trabajoCarga?.cancel()
