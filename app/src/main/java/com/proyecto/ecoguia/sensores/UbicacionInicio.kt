@@ -13,16 +13,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class FuenteUbicacionInicio(val texto: String) {
-    ESP32("GPS del dispositivo EcoGuía"),
-    TELEFONO("GPS del teléfono")
-}
+enum class FuenteUbicacionInicio { ESP32, TELEFONO }
 
 data class UbicacionInicio(
     val coordenada: Coordenada,
-    val fuente: FuenteUbicacionInicio,
-    /** El ESP32 respondió pero el NEO-7M aún no tiene satélites, por eso se usó el teléfono. */
-    val esp32BuscandoSatelites: Boolean = false
+    val fuente: FuenteUbicacionInicio
 )
 
 private sealed interface LecturaEsp32 {
@@ -55,11 +50,7 @@ suspend fun obtenerUbicacionInicio(contexto: Context): UbicacionInicio? = corout
         UbicacionInicio(lecturaEsp32.coordenada, FuenteUbicacionInicio.ESP32)
     } else {
         telefono.await()?.let {
-            UbicacionInicio(
-                Coordenada(it.latitude, it.longitude),
-                FuenteUbicacionInicio.TELEFONO,
-                esp32BuscandoSatelites = lecturaEsp32 == LecturaEsp32.BuscandoSatelites
-            )
+            UbicacionInicio(Coordenada(it.latitude, it.longitude), FuenteUbicacionInicio.TELEFONO)
         }
     }
 }

@@ -112,14 +112,8 @@ fun SeleccionarRutaScreen(
                     }
                     is ResultadoInicio.FueraDeInicio -> {
                         error = ValidadorInicio.MENSAJE_FUERA_DE_INICIO
-                        val fuente = ubicacion?.let {
-                            val satelites = if (it.esp32BuscandoSatelites) {
-                                "; el dispositivo EcoGuía todavía busca satélites"
-                            } else ""
-                            " (según el ${it.fuente.texto}$satelites)"
-                        }.orEmpty()
                         avisoFueraDeInicio = "Estás a ${formatearDistancia(resultado.distanciaMetros)} " +
-                                "del nodo de inicio \"${inicio?.nombre.orEmpty()}\"$fuente."
+                                "del nodo de inicio \"${inicio?.nombre.orEmpty()}\"."
                     }
                     ResultadoInicio.SinUbicacion -> error = ValidadorInicio.MENSAJE_SIN_UBICACION
                     ResultadoInicio.RutaSinNodos ->
