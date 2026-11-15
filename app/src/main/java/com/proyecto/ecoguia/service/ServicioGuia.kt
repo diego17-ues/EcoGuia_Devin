@@ -147,7 +147,9 @@ class ServicioGuia : Service() {
                 motor = MotorGuia(
                     ruta = ruta,
                     estimador = EstimadorTiempo(velocidad),
-                    indiceInicial = if (indiceUltimo >= 0) indiceUltimo + 1 else 0
+                    // ultimo_nodo_id se marca a 15 m; se retoma apuntando a ese nodo y el motor
+                    // lo da por alcanzado con su propio umbral (o al avanzar por el tramo siguiente).
+                    indiceInicial = indiceUltimo.coerceAtLeast(0)
                 )
                 simulador = null
                 simulacion = PreferenciasGuia.simulacion(this@ServicioGuia)
