@@ -170,8 +170,8 @@ fun RutaEnCursoScreen(
                                     val seguimientoId = ruta?.seguimientoId
                                         ?: seguimientoIdInicial
                                         ?: throw IllegalStateException("No hay un seguimiento activo para finalizar.")
-                                    SesionGuia.detener(contexto)
                                     repository.finalizarRuta(seguimientoId)
+                                    SesionGuia.detener(contexto)
                                     onFinalizada()
                                 } catch (e: CancellationException) {
                                     throw e
@@ -232,8 +232,8 @@ fun RutaEnCursoScreen(
                                 val seguimientoId = ruta?.seguimientoId
                                     ?: seguimientoIdInicial
                                     ?: throw IllegalStateException("No hay un seguimiento activo para cancelar.")
-                                SesionGuia.detener(contexto)
                                 repository.detenerRuta(seguimientoId)
+                                SesionGuia.detener(contexto)
                                 mostrarConfirmacionCancelacion = false
                                 onFinalizada()
                             } catch (e: CancellationException) {

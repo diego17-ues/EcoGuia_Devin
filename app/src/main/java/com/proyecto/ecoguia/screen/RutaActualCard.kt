@@ -114,8 +114,8 @@ fun RutaActualCard(
                                     finalizando = true
                                     error = null
                                     try {
-                                        SesionGuia.detener(contexto)
                                         repository.finalizarRuta(ruta.seguimientoId)
+                                        SesionGuia.detener(contexto)
                                         onRutaFinalizada()
                                     } catch (e: CancellationException) {
                                         throw e
