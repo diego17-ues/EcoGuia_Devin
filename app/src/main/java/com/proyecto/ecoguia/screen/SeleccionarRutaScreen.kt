@@ -43,7 +43,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.Manifest
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,7 +57,7 @@ import com.proyecto.ecoguia.data.repository.RutasRepository
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
 import com.proyecto.ecoguia.navigation.BottomNavItem
 import com.proyecto.ecoguia.navigation.EcoGuiaNavigationBar
-import com.proyecto.ecoguia.sensores.obtenerUbicacionActual
+import com.proyecto.ecoguia.sensores.obtenerUbicacionInicio
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import java.text.NumberFormat
@@ -91,18 +90,19 @@ fun SeleccionarRutaScreen(
     val rutaSeleccionada = rutas.firstOrNull { it.id == rutaSeleccionadaId }
     val contexto = LocalContext.current
 
-    // Solo se guarda el seguimiento si el GPS del teléfono ubica a la persona en el nodo de inicio.
+    // Solo se guarda el seguimiento si la persona está en el nodo de inicio, según el GPS del
+    // ESP32 (con satélites) o, si no, el del teléfono.
     fun confirmarEnNodoDeInicio(ruta: RutaDisponible) {
         scope.launch {
             rutaConfirmandoId = ruta.id
             verificandoInicio = true
             error = null
             try {
-                val ubicacion = obtenerUbicacionActual(contexto)
+                val ubicacion = obtenerUbicacionInicio(contexto)
                 verificandoInicio = false
                 val inicio = ruta.nodos.firstOrNull()
                 val resultado = ValidadorInicio.validar(
-                    posicion = ubicacion?.let { Coordenada(it.latitude, it.longitude) },
+                    posicion = ubicacion?.coordenada,
                     nodoInicio = inicio?.let { Coordenada(it.latitud, it.longitud) }
                 )
                 when (resultado) {
@@ -112,8 +112,14 @@ fun SeleccionarRutaScreen(
                     }
                     is ResultadoInicio.FueraDeInicio -> {
                         error = ValidadorInicio.MENSAJE_FUERA_DE_INICIO
+                        val fuente = ubicacion?.let {
+                            val satelites = if (it.esp32BuscandoSatelites) {
+                                "; el dispositivo EcoGuía todavía busca satélites"
+                            } else ""
+                            " (según el ${it.fuente.texto}$satelites)"
+                        }.orEmpty()
                         avisoFueraDeInicio = "Estás a ${formatearDistancia(resultado.distanciaMetros)} " +
-                                "del nodo de inicio \"${inicio?.nombre.orEmpty()}\"."
+                                "del nodo de inicio \"${inicio?.nombre.orEmpty()}\"$fuente."
                     }
                     ResultadoInicio.SinUbicacion -> error = ValidadorInicio.MENSAJE_SIN_UBICACION
                     ResultadoInicio.RutaSinNodos ->
@@ -262,13 +268,9 @@ fun SeleccionarRutaScreen(
                         mostrarSeleccionRequerida = true
                     } else if (ruta.nodos.size < 2) {
                         error = "No se puede confirmar: la ruta no tiene un orden válido de nodos."
-                    } else if (!tieneUbicacionPrecisa(contexto)) {
-                        lanzadorPermisoUbicacion.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
-                        )
+                    } else if (permisosGuiaFaltantes(contexto).isNotEmpty()) {
+                        // Ubicación para el teléfono y Bluetooth para leer el GPS del ESP32.
+                        lanzadorPermisoUbicacion.launch(permisosGuia())
                     } else {
                         confirmarEnNodoDeInicio(ruta)
                     }

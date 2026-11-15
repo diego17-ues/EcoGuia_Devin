@@ -18,7 +18,7 @@ object ValidadorInicio {
         "No se puede iniciar el recorrido, ubicate en el nodo de inicio para comenzar"
 
     const val MENSAJE_SIN_UBICACION =
-        "No se pudo obtener tu ubicación con el GPS del teléfono. " +
+        "No se pudo obtener tu ubicación con el GPS del dispositivo EcoGuía ni con el del teléfono. " +
                 "Activa la ubicación y vuelve a intentarlo en el nodo de inicio."
 
     fun validar(

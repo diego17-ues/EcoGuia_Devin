@@ -54,9 +54,12 @@ Reparto de tareas:
 
 ### Validación del nodo de inicio (`ValidadorInicio`)
 
-EcoGuía no lleva a la persona hasta el comienzo de la ruta. Al pulsar **"Confirmar ruta"** se toma
-una lectura nueva del GPS del teléfono (máx. 15 s) y solo se crea el seguimiento si la persona está
-a `ConfigGuia.RADIO_NODO_INICIO_METROS` (15 m) o menos del primer nodo. Si no, se muestra
+EcoGuía no lleva a la persona hasta el comienzo de la ruta. Al pulsar **"Confirmar ruta"** la app
+abre una conexión temporal con el ESP32 (hasta 6 s para conectar y 5 s para recibir un `P` con fix)
+y usa el GPS del NEO-7M si ya tiene satélites. Si el dispositivo no está conectado, está desactivado
+o aún busca satélites, usa una lectura nueva del GPS del teléfono (máx. 15 s, tomada en paralelo).
+Solo se crea el seguimiento si la persona está a `ConfigGuia.RADIO_NODO_INICIO_METROS` (15 m) o
+menos del primer nodo. La conexión temporal se cierra y la guía vuelve a conectar al empezar. Si no, se muestra
 "No se puede iniciar el recorrido, ubicate en el nodo de inicio para comenzar" junto con la
 distancia al nodo. Reanudar una ruta ya iniciada no vuelve a pedir esta validación.
 

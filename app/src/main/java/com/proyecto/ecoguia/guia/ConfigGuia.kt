@@ -72,6 +72,12 @@ object ConfigGuia {
     /** Tiempo máximo para obtener una ubicación nueva del GPS del teléfono al iniciar. */
     const val ESPERA_UBICACION_INICIO_MS = 15_000L
 
+    /** Al validar el inicio, tiempo máximo para conectar con el ESP32 antes de usar el teléfono. */
+    const val ESPERA_CONEXION_ESP32_INICIO_MS = 6_000L
+
+    /** Al validar el inicio, tiempo máximo para recibir un `P` con fix del ESP32 ya conectado. */
+    const val ESPERA_FIX_ESP32_INICIO_MS = 5_000L
+
     /** Distancia a la que un obstáculo se da por superado y se pasa al siguiente. */
     const val UMBRAL_OBSTACULO_SUPERADO_METROS = 5.0
 
