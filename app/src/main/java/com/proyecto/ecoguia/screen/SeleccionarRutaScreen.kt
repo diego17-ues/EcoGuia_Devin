@@ -61,6 +61,7 @@ import com.proyecto.ecoguia.sensores.obtenerUbicacionInicio
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import java.text.NumberFormat
+import java.text.Normalizer
 import java.util.Locale
 
 private val localeEspanol = Locale.forLanguageTag("es-SV")
@@ -74,7 +75,9 @@ fun SeleccionarRutaScreen(
     onSeleccionarRuta: (rutaId: Long, seguimientoId: Long, nombreRuta: String) -> Unit,
     onAjustesClick: () -> Unit = {},
     onAsistenteVozClick: () -> Unit = {},
-    onMensajeVoz: (String) -> Unit = {}
+    onMensajeVoz: (String) -> Unit = {},
+    rutaSolicitadaPorVoz: String? = null,
+    onSolicitudRutaVozConsumida: () -> Unit = {}
 ) {
     val rutasRepository = remember { RutasRepository() }
     val seguimientoRepository = remember { SeguimientoRepository() }
@@ -88,6 +91,7 @@ fun SeleccionarRutaScreen(
     var mostrarSeleccionRequerida by remember { mutableStateOf(false) }
     var verificandoInicio by remember { mutableStateOf(false) }
     var avisoFueraDeInicio by remember { mutableStateOf<String?>(null) }
+    var rutaPendienteDeConfirmar by remember { mutableStateOf<RutaDisponible?>(null) }
     val rutaSeleccionada = rutas.firstOrNull { it.id == rutaSeleccionadaId }
     val contexto = LocalContext.current
 
@@ -143,10 +147,22 @@ fun SeleccionarRutaScreen(
     val lanzadorPermisoUbicacion = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
-        val ruta = rutaSeleccionada
+        val ruta = rutaPendienteDeConfirmar ?: rutaSeleccionada
+        rutaPendienteDeConfirmar = null
         if (!tieneUbicacionPrecisa(contexto)) {
             error = "Se necesita la ubicación precisa para comprobar que estás en el nodo de inicio."
+            onMensajeVoz(error.orEmpty())
         } else if (ruta != null) {
+            confirmarEnNodoDeInicio(ruta)
+        }
+    }
+
+    fun iniciarRuta(ruta: RutaDisponible) {
+        rutaSeleccionadaId = ruta.id
+        if (permisosGuiaFaltantes(contexto).isNotEmpty()) {
+            rutaPendienteDeConfirmar = ruta
+            lanzadorPermisoUbicacion.launch(permisosGuia())
+        } else {
             confirmarEnNodoDeInicio(ruta)
         }
     }
@@ -158,6 +174,26 @@ fun SeleccionarRutaScreen(
             error = e.localizedMessage ?: "No se pudieron cargar las rutas."
         } finally {
             cargando = false
+        }
+    }
+
+    LaunchedEffect(rutaSolicitadaPorVoz, cargando, rutas) {
+        val solicitud = rutaSolicitadaPorVoz ?: return@LaunchedEffect
+        if (cargando) return@LaunchedEffect
+
+        onSolicitudRutaVozConsumida()
+        val consulta = normalizarTextoVoz(solicitud)
+        val ruta = rutas.firstOrNull { normalizarTextoVoz(it.nombre) == consulta }
+            ?: rutas
+                .filter { normalizarTextoVoz(it.nombre).length >= 2 }
+                .filter { consulta.contains(normalizarTextoVoz(it.nombre)) }
+                .maxByOrNull { normalizarTextoVoz(it.nombre).length }
+
+        if (ruta == null) {
+            onMensajeVoz("No encontré esa ruta. Di el nombre de una ruta disponible.")
+        } else {
+            rutaSeleccionadaId = ruta.id
+            iniciarRuta(ruta)
         }
     }
 
@@ -250,6 +286,7 @@ fun SeleccionarRutaScreen(
                             // Seleccionar solo cambia la vista previa; no escribe seguimientos.
                             rutaSeleccionadaId = ruta.id
                             error = null
+                            onMensajeVoz(ruta.nombre)
                         }
                     )
                 }
@@ -270,11 +307,9 @@ fun SeleccionarRutaScreen(
                         mostrarSeleccionRequerida = true
                     } else if (ruta.nodos.size < 2) {
                         error = "No se puede confirmar: la ruta no tiene un orden válido de nodos."
-                    } else if (permisosGuiaFaltantes(contexto).isNotEmpty()) {
-                        // Ubicación para el teléfono y Bluetooth para leer el GPS del ESP32.
-                        lanzadorPermisoUbicacion.launch(permisosGuia())
                     } else {
-                        confirmarEnNodoDeInicio(ruta)
+                        // La selección táctil y la selección por voz usan la misma validación de inicio.
+                        iniciarRuta(ruta)
                     }
                 },
                 enabled = rutaConfirmandoId == null,
@@ -440,3 +475,8 @@ private fun formatearDistancia(metros: Double): String {
     }.format(metros)
     return "$numero m"
 }
+
+private fun normalizarTextoVoz(texto: String): String =
+    Normalizer.normalize(texto.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "")
+        .trim()

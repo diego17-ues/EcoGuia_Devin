@@ -9,6 +9,7 @@ import android.speech.RecognizerIntent
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.view.HapticFeedbackConstants
+import android.widget.Toast
 
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
@@ -64,8 +65,16 @@ class MainActivity : FragmentActivity() {
                     mutableStateOf<Long?>(null)
                 }
 
-                var rutaIniciadaNombre by remember {
+                var rutaSolicitadaPorVoz by remember {
                     mutableStateOf<String?>(null)
+                }
+
+                var omitirProximaPresentacionInicio by remember {
+                    mutableStateOf(false)
+                }
+
+                var seguimientoDestinoAnunciado by remember {
+                    mutableStateOf<Long?>(null)
                 }
 
                 val repoEncargado = remember {
@@ -162,6 +171,30 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
+                val estadoSesionGuia by SesionGuia.estado.collectAsState()
+                LaunchedEffect(
+                    estadoSesionGuia.seguimientoId,
+                    estadoSesionGuia.guia?.finalizada,
+                    pantalla
+                ) {
+                    val seguimientoId = estadoSesionGuia.seguimientoId
+                    if (
+                        pantalla in setOf(
+                            "principal_ciego",
+                            "seleccionar_ruta",
+                            "agregar_ruta",
+                            "ruta_en_curso",
+                            "ajustes_no_vidente"
+                        ) &&
+                        seguimientoId != null &&
+                        estadoSesionGuia.guia?.finalizada == true &&
+                        seguimientoDestinoAnunciado != seguimientoId
+                    ) {
+                        seguimientoDestinoAnunciado = seguimientoId
+                        hablar("Has llegado a tu destino.")
+                    }
+                }
+
                 LaunchedEffect(pantalla) {
                     val pantallaAnunciada = pantalla
                     val pantallasNoVidente = setOf(
@@ -173,31 +206,30 @@ class MainActivity : FragmentActivity() {
                     )
                     val anuncioPantalla = when (pantallaAnunciada) {
                         "principal_ciego" ->
-                            "${rutaIniciadaNombre?.let { "Has iniciado la ruta $it. " }.orEmpty()}Inicio de persona no vidente. Puedes seleccionar una ruta, agregar una ruta, consultar la ruta actual o abrir ajustes. Toca el asistente de voz y di qué deseas hacer."
+                            "Inicio de persona no vidente. Puedes seleccionar una ruta, agregar una ruta, consultar la ruta actual o abrir ajustes. Toca el asistente de voz y di qué deseas hacer."
                         "seleccionar_ruta" ->
-                            "Selección de ruta. Puedes escuchar las rutas disponibles, elegir una, revisar su mapa, distancia y tiempo estimado, y confirmar el inicio cuando estés en el primer punto. También puedes volver al inicio o abrir ajustes."
+                            "Di el nombre de la ruta que deseas iniciar."
                         "agregar_ruta" ->
                             "Agregar ruta. Puedes escribir el nombre y la descripción, capturar puntos con el GPS, revisar los puntos agregados y guardar la ruta. También puedes volver al inicio o abrir ajustes."
                         "ruta_en_curso" ->
                             "Ruta en curso. Puedes consultar el avance, el último punto alcanzado, el siguiente punto y el estado del dispositivo EcoGuía. También puedes reintentar la guía, finalizar o cancelar el recorrido."
                         "ajustes_no_vidente" ->
                             "Ajustes de persona no vidente. Puedes escuchar la guía rápida, configurar los avisos sonoros, vincular a tu encargado y volver al inicio."
-                        "principal_encargado" ->
-                            "Inicio de encargado. Puedes rastrear a una persona vinculada, vincular a una persona no vidente o abrir ajustes."
-                        "vincular_encargado" ->
-                            "Vincular persona no vidente. Puedes generar o ingresar un código de vinculación, consultar el estado y volver al inicio."
-                        "seguimiento" ->
-                            "Rastreo. Puedes ver la ubicación y el recorrido observado de las personas vinculadas, consultar la ruta y su hora estimada de llegada, recargar la búsqueda si no aparece nadie y enviar ayuda."
-                        "ajustes_encargado" ->
-                            "Ajustes de encargado. Puedes revisar las opciones de cuenta y ubicación compartida, y volver al inicio."
                         else -> null
+                    }
+
+                    if (pantallaAnunciada == "principal_ciego" && omitirProximaPresentacionInicio) {
+                        omitirProximaPresentacionInicio = false
+                        return@LaunchedEffect
                     }
 
                     if (anuncioPantalla != null) {
                         hablar(anuncioPantalla)
                     }
 
-                    if (pantallaAnunciada in pantallasNoVidente) {
+                    if (pantallaAnunciada in pantallasNoVidente &&
+                        pantallaAnunciada != "seleccionar_ruta"
+                    ) {
                         val resultadoRutas = runCatching {
                             RutasRepository().listarNombresRutasDisponibles()
                         }
@@ -253,6 +285,7 @@ class MainActivity : FragmentActivity() {
 
                         // Regresar desde seleccionar ruta
                         "seleccionar_ruta" -> {
+                            rutaSolicitadaPorVoz = null
                             pantalla = "principal_ciego"
                         }
 
@@ -390,8 +423,11 @@ class MainActivity : FragmentActivity() {
                                         frase.contains("seleccionar ruta") ||
                                         frase.contains("buscar ruta") ||
                                         frase.contains("iniciar ruta")) -> {
-                                    pantalla = "seleccionar_ruta"
-                                    hablar("Elige una ruta y confirma su inicio en pantalla")
+                                    if (pantalla == "seleccionar_ruta") {
+                                        hablar("Di el nombre de la ruta que deseas iniciar.")
+                                    } else {
+                                        pantalla = "seleccionar_ruta"
+                                    }
                                 }
 
                                 esNoVidente && (frase.contains("agregar ruta") ||
@@ -411,6 +447,10 @@ class MainActivity : FragmentActivity() {
                                 frase.contains("donde estoy") ||
                                         frase.contains("mi ubicacion") -> {
                                     hablar("La consulta de ubicación por voz aún no está disponible")
+                                }
+
+                                pantalla == "seleccionar_ruta" -> {
+                                    rutaSolicitadaPorVoz = fraseOriginal
                                 }
 
                                 else -> {
@@ -672,21 +712,26 @@ class MainActivity : FragmentActivity() {
                         "seleccionar_ruta" ->
                             SeleccionarRutaScreen(
                                 onVolver = {
+                                    rutaSolicitadaPorVoz = null
                                     pantalla = "principal_ciego"
                                 },
                                 onSeleccionarRuta = { _, seguimientoId, nombreRuta ->
                                     seguimientoIdActual = seguimientoId
-                                    rutaIniciadaNombre = nombreRuta
+                                    omitirProximaPresentacionInicio = true
                                     // La guía arranca ya, para validar el rumbo con el MPU desde el
                                     // primer paso y no recién al abrir "Ruta en curso".
                                     SesionGuia.iniciar(contexto, seguimientoId)
+                                    hablar("Has iniciado la ruta $nombreRuta")
                                     pantalla = "principal_ciego"
                                 },
                                 onAjustesClick = {
+                                    rutaSolicitadaPorVoz = null
                                     pantalla = "ajustes_no_vidente"
                                 },
                                 onAsistenteVozClick = { iniciarAsistenteVoz() },
-                                onMensajeVoz = { mensaje -> hablar(mensaje) }
+                                onMensajeVoz = { mensaje -> hablar(mensaje) },
+                                rutaSolicitadaPorVoz = rutaSolicitadaPorVoz,
+                                onSolicitudRutaVozConsumida = { rutaSolicitadaPorVoz = null }
                             )
 
                         // Visualizar ruta en curso
@@ -699,7 +744,6 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onFinalizada = {
                                     seguimientoIdActual = null
-                                    rutaIniciadaNombre = null
                                     pantalla = "principal_ciego"
                                 }
                             )

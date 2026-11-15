@@ -112,7 +112,7 @@ fun RutaEnCursoScreen(
         val actual = ruta ?: return@LaunchedEffect
         val mensajeSiguiente = actual.siguienteNodoNombre?.let {
             "El siguiente punto es $it."
-        } ?: "Has llegado al destino final."
+        } ?: "El destino es ${actual.nodos.lastOrNull()?.nombre ?: "el último punto"}."
         onMensajeVoz(
             "La ruta actual es ${actual.nombreRuta}. Avance de ${actual.progresoPorcentaje} por ciento. " +
                     "$mensajeSiguiente " +
