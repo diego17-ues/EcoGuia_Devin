@@ -52,6 +52,14 @@ Reparto de tareas:
 | Servicio en primer plano (progreso + rastreo cada 10 s) | `service/ServicioGuia.kt`, `service/SesionGuia.kt` |
 | Pantalla de la ruta en curso | `screen/PanelGuiaRuta.kt`, `screen/RutaEnCursoScreen.kt`, `screen/MapaRutaComposable.kt` |
 
+### Validación del nodo de inicio (`ValidadorInicio`)
+
+EcoGuía no lleva a la persona hasta el comienzo de la ruta. Al pulsar **"Confirmar ruta"** se toma
+una lectura nueva del GPS del teléfono (máx. 15 s) y solo se crea el seguimiento si la persona está
+a `ConfigGuia.RADIO_NODO_INICIO_METROS` (15 m) o menos del primer nodo. Si no, se muestra
+"No se puede iniciar el recorrido, ubicate en el nodo de inicio para comenzar" junto con la
+distancia al nodo. Reanudar una ruta ya iniciada no vuelve a pedir esta validación.
+
 ### Fuentes de posición y rumbo
 
 1. **Posición de la ruta:** si el ESP32 está conectado y envió un `P` válido en los últimos 3 s,
@@ -133,7 +141,7 @@ completo:**
 
 ## Simulación (sin ESP32 ni GPS real)
 
-En la ruta en curso, activar el interruptor **"Modo simulación"** (o poner
+Para llegar a la ruta en curso hay que pasar la validación del nodo de inicio. Después, en ella, activar el interruptor **"Modo simulación"** (o poner
 `ConfigGuia.SIMULACION_ACTIVA_POR_DEFECTO = true`). Se recorre la ruta a la velocidad configurada,
 con un rumbo que oscila ±35°. Si el dispositivo está conectado, recibe `L`/`R`/`A`, `N` y `F` y
 se puede oír el buzzer; la tarjeta del dispositivo muestra la última letra enviada. En simulación se

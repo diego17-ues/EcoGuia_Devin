@@ -43,15 +43,22 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.Manifest
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.proyecto.ecoguia.components.AsistenteVozCard
 import com.proyecto.ecoguia.data.repository.RutaDisponible
+import com.proyecto.ecoguia.guia.Coordenada
 import com.proyecto.ecoguia.guia.EstimadorTiempo
+import com.proyecto.ecoguia.guia.ResultadoInicio
+import com.proyecto.ecoguia.guia.ValidadorInicio
 import com.proyecto.ecoguia.guia.PreferenciasGuia
 import com.proyecto.ecoguia.data.repository.RutasRepository
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
 import com.proyecto.ecoguia.navigation.BottomNavItem
 import com.proyecto.ecoguia.navigation.EcoGuiaNavigationBar
+import com.proyecto.ecoguia.sensores.obtenerUbicacionActual
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import java.text.NumberFormat
@@ -79,7 +86,62 @@ fun SeleccionarRutaScreen(
     var cargando by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var mostrarSeleccionRequerida by remember { mutableStateOf(false) }
+    var verificandoInicio by remember { mutableStateOf(false) }
+    var avisoFueraDeInicio by remember { mutableStateOf<String?>(null) }
     val rutaSeleccionada = rutas.firstOrNull { it.id == rutaSeleccionadaId }
+    val contexto = LocalContext.current
+
+    // Solo se guarda el seguimiento si el GPS del teléfono ubica a la persona en el nodo de inicio.
+    fun confirmarEnNodoDeInicio(ruta: RutaDisponible) {
+        scope.launch {
+            rutaConfirmandoId = ruta.id
+            verificandoInicio = true
+            error = null
+            try {
+                val ubicacion = obtenerUbicacionActual(contexto)
+                verificandoInicio = false
+                val inicio = ruta.nodos.firstOrNull()
+                val resultado = ValidadorInicio.validar(
+                    posicion = ubicacion?.let { Coordenada(it.latitude, it.longitude) },
+                    nodoInicio = inicio?.let { Coordenada(it.latitud, it.longitud) }
+                )
+                when (resultado) {
+                    is ResultadoInicio.EnInicio -> {
+                        val seguimientoId = seguimientoRepository.iniciarRuta(ruta.id)
+                        onSeleccionarRuta(ruta.id, seguimientoId)
+                    }
+                    is ResultadoInicio.FueraDeInicio -> {
+                        error = ValidadorInicio.MENSAJE_FUERA_DE_INICIO
+                        avisoFueraDeInicio = "Estás a ${formatearDistancia(resultado.distanciaMetros)} " +
+                                "del nodo de inicio \"${inicio?.nombre.orEmpty()}\"."
+                    }
+                    ResultadoInicio.SinUbicacion -> error = ValidadorInicio.MENSAJE_SIN_UBICACION
+                    ResultadoInicio.RutaSinNodos ->
+                        error = "No se puede confirmar: la ruta no tiene un orden válido de nodos."
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("EcoGuia", "Error al guardar seguimiento: ${e.message}", e)
+                error = e.localizedMessage ?: "No se pudo iniciar la ruta."
+                snackbarHostState.showSnackbar("No se pudo guardar el seguimiento")
+            } finally {
+                verificandoInicio = false
+                rutaConfirmandoId = null
+            }
+        }
+    }
+
+    val lanzadorPermisoUbicacion = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val ruta = rutaSeleccionada
+        if (!tieneUbicacionPrecisa(contexto)) {
+            error = "Se necesita la ubicación precisa para comprobar que estás en el nodo de inicio."
+        } else if (ruta != null) {
+            confirmarEnNodoDeInicio(ruta)
+        }
+    }
 
     LaunchedEffect(rutasRepository) {
         try {
@@ -200,23 +262,15 @@ fun SeleccionarRutaScreen(
                         mostrarSeleccionRequerida = true
                     } else if (ruta.nodos.size < 2) {
                         error = "No se puede confirmar: la ruta no tiene un orden válido de nodos."
+                    } else if (!tieneUbicacionPrecisa(contexto)) {
+                        lanzadorPermisoUbicacion.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
                     } else {
-                        scope.launch {
-                            rutaConfirmandoId = ruta.id
-                            error = null
-                            try {
-                                val seguimientoId = seguimientoRepository.iniciarRuta(ruta.id)
-                                onSeleccionarRuta(ruta.id, seguimientoId)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Log.e("EcoGuia", "Error al guardar seguimiento: ${e.message}", e)
-                                error = e.localizedMessage ?: "No se pudo iniciar la ruta."
-                                snackbarHostState.showSnackbar("No se pudo guardar el seguimiento")
-                            } finally {
-                                rutaConfirmandoId = null
-                            }
-                        }
+                        confirmarEnNodoDeInicio(ruta)
                     }
                 },
                 enabled = rutaConfirmandoId == null,
@@ -224,14 +278,22 @@ fun SeleccionarRutaScreen(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .semantics {
-                        contentDescription = if (rutaConfirmandoId != null) {
+                        contentDescription = if (verificandoInicio) {
+                            "Verificando que estás en el nodo de inicio"
+                        } else if (rutaConfirmandoId != null) {
                             "Confirmando ruta seleccionada"
                         } else {
                             "Confirmar ruta seleccionada"
                         }
                     }
             ) {
-                Text(if (rutaConfirmandoId != null) "Iniciando…" else "Confirmar ruta")
+                Text(
+                    when {
+                        verificandoInicio -> "Verificando ubicación…"
+                        rutaConfirmandoId != null -> "Iniciando…"
+                        else -> "Confirmar ruta"
+                    }
+                )
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -248,6 +310,20 @@ fun SeleccionarRutaScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 64.dp)
+        )
+    }
+
+    avisoFueraDeInicio?.let { detalle ->
+        AlertDialog(
+            onDismissRequest = { avisoFueraDeInicio = null },
+            title = { Text("No se puede iniciar el recorrido") },
+            text = { Text("${ValidadorInicio.MENSAJE_FUERA_DE_INICIO}.\n\n$detalle") },
+            confirmButton = {
+                TextButton(
+                    onClick = { avisoFueraDeInicio = null },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) { Text("Entendido") }
+            }
         )
     }
 

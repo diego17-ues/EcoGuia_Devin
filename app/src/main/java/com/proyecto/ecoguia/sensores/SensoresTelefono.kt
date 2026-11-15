@@ -7,12 +7,16 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.proyecto.ecoguia.guia.ConfigGuia
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * GPS del teléfono (FusedLocationProviderClient). Funciona siempre durante la sesión: es la
@@ -58,5 +62,30 @@ class SensoresTelefono(
     fun detener() {
         if (gpsActivo) ubicacion.removeLocationUpdates(callbackUbicacion)
         gpsActivo = false
+    }
+}
+
+/**
+ * Lectura única y reciente del GPS del teléfono (sin usar posiciones guardadas), o null si no
+ * hay permiso o no llega en [ConfigGuia.ESPERA_UBICACION_INICIO_MS].
+ */
+@SuppressLint("MissingPermission")
+suspend fun obtenerUbicacionActual(contexto: Context): Location? {
+    if (ContextCompat.checkSelfPermission(contexto, Manifest.permission.ACCESS_FINE_LOCATION) !=
+        PackageManager.PERMISSION_GRANTED
+    ) return null
+    val solicitud = CurrentLocationRequest.Builder()
+        .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+        .setMaxUpdateAgeMillis(0)
+        .setDurationMillis(ConfigGuia.ESPERA_UBICACION_INICIO_MS)
+        .build()
+    val cancelacion = CancellationTokenSource()
+    return suspendCancellableCoroutine { continuacion ->
+        continuacion.invokeOnCancellation { cancelacion.cancel() }
+        LocationServices.getFusedLocationProviderClient(contexto)
+            .getCurrentLocation(solicitud, cancelacion.token)
+            .addOnSuccessListener { continuacion.resume(it) }
+            .addOnFailureListener { continuacion.resume(null) }
+            .addOnCanceledListener { continuacion.resume(null) }
     }
 }

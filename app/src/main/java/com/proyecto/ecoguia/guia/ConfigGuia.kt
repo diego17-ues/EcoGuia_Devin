@@ -66,6 +66,12 @@ object ConfigGuia {
     /** Distancia a la que un nodo de la ruta se da por alcanzado. */
     const val UMBRAL_LLEGADA_NODO_METROS = 6.0
 
+    /** Distancia máxima al primer nodo de la ruta para permitir iniciar el recorrido. */
+    const val RADIO_NODO_INICIO_METROS = 15.0
+
+    /** Tiempo máximo para obtener una ubicación nueva del GPS del teléfono al iniciar. */
+    const val ESPERA_UBICACION_INICIO_MS = 15_000L
+
     /** Distancia a la que un obstáculo se da por superado y se pasa al siguiente. */
     const val UMBRAL_OBSTACULO_SUPERADO_METROS = 5.0
 

@@ -115,6 +115,8 @@ class ConexionEsp32(
         synchronized(bloqueoEscritura) {
             pausaHastaMs = SystemClock.elapsedRealtime() + ConfigGuia.PAUSA_TRAS_AVISO_MS
             if (escribirLinea(aviso.letra.toString())) {
+                // Se vuelve a contar desde que terminó la escritura, por si fue lenta.
+                pausaHastaMs = SystemClock.elapsedRealtime() + ConfigGuia.PAUSA_TRAS_AVISO_MS
                 if (aviso == AvisoRuta.DESTINO_FINAL) destinoFinalPendiente = false
                 ultimaIndicacionEnviada = null
             } else {
