@@ -124,6 +124,11 @@ class ConexionEsp32(
         }
     }
 
+    /** Al empezar otra ruta se descarta el F pendiente de la anterior. */
+    fun descartarAvisosPendientes() {
+        destinoFinalPendiente = false
+    }
+
     private fun enPausa(): Boolean = SystemClock.elapsedRealtime() < pausaHastaMs
 
     /** Lo que se repite cada segundo: la indicación vigente o, si no hay, "H". */

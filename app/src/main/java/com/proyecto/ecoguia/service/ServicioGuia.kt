@@ -175,6 +175,7 @@ class ServicioGuia : Service() {
                 ).also {
                     indiceObjetivoAnterior = it.indiceObjetivo
                     destinoAvisado = false
+                    esp32.descartarAvisosPendientes()
                     synchronized(validador) { validador.reiniciar() }
                 }
                 // Una ruta nueva no hereda el recorrido simulado de la anterior.
