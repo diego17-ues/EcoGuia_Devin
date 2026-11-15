@@ -156,6 +156,9 @@ class ServicioGuia : Service() {
                     // lo da por alcanzado con su propio umbral (o al avanzar por el tramo siguiente).
                     indiceInicial = indiceUltimo.coerceAtLeast(0)
                 )
+                // Una ruta nueva no hereda el recorrido simulado de la anterior.
+                trabajoSimulacion?.cancel()
+                lecturaSimulada = null
                 simulador = null
                 simulacion = PreferenciasGuia.simulacion(this@ServicioGuia)
 
