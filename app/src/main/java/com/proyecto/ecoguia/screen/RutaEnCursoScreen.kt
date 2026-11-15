@@ -132,6 +132,14 @@ fun RutaEnCursoScreen(
                     }
                     avisoPermisos?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     sesion.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (sesion.error != null && !sesion.activa && !sesion.cargando && !faltanPermisos) {
+                        TextButton(
+                            onClick = { SesionGuia.iniciar(contexto, actual.seguimientoId) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Reintentar la guía")
+                        }
+                    }
                     if (sesion.activa || sesion.cargando) {
                         PanelGuiaRuta(sesion)
                     }

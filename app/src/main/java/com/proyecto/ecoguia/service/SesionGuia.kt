@@ -41,8 +41,9 @@ object SesionGuia {
         estadoInterno.update(transformar)
     }
 
+    /** Vuelve al estado inicial conservando el último error para que la pantalla lo muestre. */
     internal fun reiniciar() {
-        estadoInterno.value = EstadoSesionGuia()
+        estadoInterno.update { EstadoSesionGuia(error = it.error) }
     }
 
     fun iniciar(contexto: Context, seguimientoId: Long?) {
