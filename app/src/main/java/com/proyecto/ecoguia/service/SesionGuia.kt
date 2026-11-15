@@ -23,12 +23,16 @@ data class EstadoSesionGuia(
     val velocidadMetrosSegundo: Double? = null,
     val esp32: ConexionEsp32Estado = ConexionEsp32Estado(),
     val fuentes: FuentesElegidas? = null,
-    val rumboTelefonoDisponible: Boolean = true,
+    val dispositivoActivo: Boolean = true,
+    /** Última letra (L, R, F o H) escrita al ESP32 mientras está conectado. */
+    val ultimaLetraEsp32: Char? = null,
     val gpsTelefonoDisponible: Boolean = true,
     val guia: EstadoGuia? = null,
     /** Hora (System.currentTimeMillis) del último envío correcto a posiciones_usuario. */
     val ultimoEnvioPosicionMs: Long? = null,
-    val errorEnvioPosicion: String? = null
+    val errorEnvioPosicion: String? = null,
+    /** La ubicación la está enviando "Compartir ubicación" (ServicioSeguimiento). */
+    val compartidaPorOtroServicio: Boolean = false
 )
 
 /** Punto de acceso para que la UI inicie, ajuste y detenga la guía y observe su estado. */
@@ -65,6 +69,13 @@ object SesionGuia {
     fun cambiarSimulacion(contexto: Context, activa: Boolean) {
         enviarAccion(contexto, ServicioGuia.ACTION_SIMULACION) {
             putExtra(ServicioGuia.EXTRA_SIMULACION, activa)
+        }
+    }
+
+    /** Conecta o desconecta el dispositivo EcoGuía sin detener la ruta. */
+    fun cambiarDispositivo(contexto: Context, activo: Boolean) {
+        enviarAccion(contexto, ServicioGuia.ACTION_DISPOSITIVO) {
+            putExtra(ServicioGuia.EXTRA_DISPOSITIVO, activo)
         }
     }
 

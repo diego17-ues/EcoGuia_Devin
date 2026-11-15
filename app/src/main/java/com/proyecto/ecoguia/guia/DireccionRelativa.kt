@@ -1,16 +1,13 @@
 package com.proyecto.ecoguia.guia
 
 /**
- * Indicación que se envía al ESP32 (una letra por línea) y se muestra en pantalla.
+ * Respuesta que se envía al ESP32 (una letra por línea) para que el buzzer corrija el rumbo.
+ * La app no la muestra como instrucción a la persona.
  */
-enum class Indicacion(
-    val letra: Char,
-    val texto: String,
-    val sentido: String
-) {
-    IZQUIERDA('L', "Gira a la izquierda", "a la izquierda"),
-    DERECHA('R', "Gira a la derecha", "a la derecha"),
-    RECTO('F', "Sigue recto", "al frente")
+enum class Indicacion(val letra: Char) {
+    IZQUIERDA('L'),
+    DERECHA('R'),
+    RECTO('F')
 }
 
 object DireccionRelativa {

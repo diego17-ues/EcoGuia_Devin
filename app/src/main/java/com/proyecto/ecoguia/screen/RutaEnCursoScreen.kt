@@ -43,6 +43,7 @@ import com.proyecto.ecoguia.data.repository.RutaActivaUsuario
 import com.proyecto.ecoguia.data.repository.RutaDisponible
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
 import com.proyecto.ecoguia.service.SesionGuia
+import com.mapbox.geojson.Point
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -156,6 +157,8 @@ fun RutaEnCursoScreen(
                     )
                     MapaRutaComposable(
                         ruta = actual.toRutaDisponible(),
+                        posicionActual = sesion.fuentes?.posicion?.let { Point.fromLngLat(it.longitud, it.latitud) },
+                        nodosAlcanzados = sesion.guia?.indiceObjetivo ?: 0,
                         descripcion = "Mapa de la ruta en curso ${actual.nombreRuta}",
                         modifier = Modifier
                             .fillMaxWidth()

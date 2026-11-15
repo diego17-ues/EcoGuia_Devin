@@ -8,6 +8,7 @@ object PreferenciasGuia {
     private const val ARCHIVO = "ecoguia_guia"
     private const val CLAVE_VELOCIDAD = "velocidad_caminata_ms"
     private const val CLAVE_SIMULACION = "modo_simulacion"
+    private const val CLAVE_DISPOSITIVO = "usar_dispositivo_ecoguia"
 
     const val VELOCIDAD_MINIMA_MS = 0.3
     const val VELOCIDAD_MAXIMA_MS = 2.5
@@ -31,6 +32,17 @@ object PreferenciasGuia {
     fun guardarSimulacion(contexto: Context, activa: Boolean) {
         contexto.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE).edit()
             .putBoolean(CLAVE_SIMULACION, activa)
+            .apply()
+    }
+
+    /** Si la app se conecta al dispositivo EcoGuía (ESP32) durante la ruta. */
+    fun dispositivoActivo(contexto: Context): Boolean =
+        contexto.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE)
+            .getBoolean(CLAVE_DISPOSITIVO, true)
+
+    fun guardarDispositivoActivo(contexto: Context, activo: Boolean) {
+        contexto.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE).edit()
+            .putBoolean(CLAVE_DISPOSITIVO, activo)
             .apply()
     }
 }

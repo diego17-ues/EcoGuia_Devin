@@ -9,7 +9,6 @@ enum class FuentePosicion(val texto: String) {
 
 enum class FuenteRumbo(val texto: String) {
     ESP32("Brújula del dispositivo (MPU9250)"),
-    TELEFONO("Brújula del teléfono"),
     SIMULACION("Simulación"),
     NINGUNA("Sin rumbo todavía")
 }
@@ -25,7 +24,6 @@ data class EntradasGuia(
     val posicionEsp32: Lectura<PosicionEsp32>?,
     val rumboEsp32: Lectura<Double>?,
     val posicionTelefono: Lectura<Coordenada>?,
-    val rumboTelefono: Lectura<Double>?,
     val posicionSimulada: Lectura<Coordenada>?,
     val rumboSimulado: Lectura<Double>?
 )
@@ -41,8 +39,9 @@ data class FuentesElegidas(
  * Prioridad de fuentes:
  * - Simulación activa: se usan solo los datos simulados.
  * - ESP32 conectado y con fix = 1 reciente: posición del GPS del ESP32.
- * - ESP32 conectado con lecturas "Y" recientes: rumbo del MPU9250 (aunque el GPS no tenga fix).
- * - En cualquier otro caso: GPS y brújula del teléfono.
+ * - En otro caso: GPS del teléfono.
+ * - Rumbo: solo el MPU9250 del ESP32 (lecturas "Y" recientes). La app no guía con la brújula del
+ *   teléfono: sin rumbo del dispositivo no hay indicación y solo se muestra el progreso.
  */
 object SelectorFuente {
 
@@ -77,7 +76,6 @@ object SelectorFuente {
         }
         val (rumbo, fuenteRumbo) = when {
             rumboEsp32 != null -> rumboEsp32.valor to FuenteRumbo.ESP32
-            entradas.rumboTelefono != null -> entradas.rumboTelefono.valor to FuenteRumbo.TELEFONO
             else -> null to FuenteRumbo.NINGUNA
         }
         return FuentesElegidas(posicion, fuentePosicion, rumbo, fuenteRumbo)

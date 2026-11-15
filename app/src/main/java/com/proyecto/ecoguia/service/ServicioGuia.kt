@@ -52,9 +52,11 @@ import kotlinx.coroutines.withContext
 
 /**
  * Servicio en primer plano que mantiene la sesión de una ruta en curso:
- * - Calcula la guía (L/R/F, tiempo restante, obstáculo) con la mejor fuente disponible.
- * - Mantiene la conexión con el ESP32 y le envía las indicaciones y el latido.
- * - Envía la posición del teléfono a posiciones_usuario cada 10 s, al cambiar de ruta y al terminar.
+ * - Calcula el progreso de la ruta (punto siguiente, distancia y tiempo restantes, obstáculo).
+ * - Mantiene la conexión con el ESP32: recibe su GPS y el rumbo del MPU y le responde con L/R/F
+ *   para que el buzzer corrija el rumbo. La app no guía a la persona por sí misma.
+ * - Envía la posición del GPS del teléfono a posiciones_usuario cada 10 s, al cambiar de ruta y
+ *   al terminar.
  * Sigue funcionando con la pantalla apagada mientras la notificación esté visible.
  */
 class ServicioGuia : Service() {
@@ -67,7 +69,6 @@ class ServicioGuia : Service() {
 
     // Últimas lecturas de cada fuente; se escriben desde distintos hilos.
     @Volatile private var posicionTelefono: Lectura<Location>? = null
-    @Volatile private var rumboTelefono: Lectura<Double>? = null
     @Volatile private var posicionEsp32: Lectura<PosicionEsp32>? = null
     @Volatile private var rumboEsp32: Lectura<Double>? = null
     @Volatile private var lecturaSimulada: Lectura<Pair<Coordenada, Double>>? = null
@@ -77,6 +78,7 @@ class ServicioGuia : Service() {
     private var usuarioId: String? = null
     private var seguimientoId: Long? = null
     private var simulacion = false
+    private var dispositivoActivo = true
 
     private var trabajoCarga: Job? = null
     private var trabajoGuia: Job? = null
@@ -89,8 +91,7 @@ class ServicioGuia : Service() {
         crearCanalNotificacion()
         sensores = SensoresTelefono(
             contexto = this,
-            alRecibirUbicacion = { posicionTelefono = Lectura(it, SystemClock.elapsedRealtime()) },
-            alRecibirRumbo = { rumboTelefono = Lectura(it, SystemClock.elapsedRealtime()) }
+            alRecibirUbicacion = { posicionTelefono = Lectura(it, SystemClock.elapsedRealtime()) }
         )
         esp32 = ConexionEsp32(this, scope, ::alRecibirEsp32)
     }
@@ -103,6 +104,10 @@ class ServicioGuia : Service() {
             }
             ACTION_SIMULACION -> {
                 cambiarSimulacion(intent.getBooleanExtra(EXTRA_SIMULACION, false))
+                return modoReinicio()
+            }
+            ACTION_DISPOSITIVO -> {
+                cambiarDispositivo(intent.getBooleanExtra(EXTRA_DISPOSITIVO, true))
                 return modoReinicio()
             }
             ACTION_VELOCIDAD -> {
@@ -163,8 +168,8 @@ class ServicioGuia : Service() {
                 simulacion = PreferenciasGuia.simulacion(this@ServicioGuia)
 
                 val gps = sensores.iniciarGps()
-                val brujula = sensores.iniciarBrujula()
-                esp32.iniciar()
+                dispositivoActivo = PreferenciasGuia.dispositivoActivo(this@ServicioGuia)
+                if (dispositivoActivo) esp32.iniciar() else esp32.detener()
 
                 SesionGuia.actualizar {
                     it.copy(
@@ -175,8 +180,8 @@ class ServicioGuia : Service() {
                         ruta = ruta,
                         simulacion = simulacion,
                         velocidadMetrosSegundo = velocidad,
-                        gpsTelefonoDisponible = gps,
-                        rumboTelefonoDisponible = brujula
+                        dispositivoActivo = dispositivoActivo,
+                        gpsTelefonoDisponible = gps
                     )
                 }
                 iniciarBucles()
@@ -222,22 +227,30 @@ class ServicioGuia : Service() {
                 posicionEsp32 = posicionEsp32,
                 rumboEsp32 = rumboEsp32,
                 posicionTelefono = posicionTelefono?.let { Lectura(it.valor.aCoordenada(), it.instanteMs) },
-                rumboTelefono = rumboTelefono,
                 posicionSimulada = simulada?.let { Lectura(it.valor.first, it.instanteMs) },
                 rumboSimulado = simulada?.let { Lectura(it.valor.second, it.instanteMs) }
             ),
             ahora
         )
         val guia = synchronized(motorActual) { motorActual.actualizar(fuentes.posicion, fuentes.rumbo) }
-        // Solo se escribe al ESP32 cuando la indicación cambia (lo controla ConexionEsp32).
-        esp32.enviarIndicacion(guia.indicacion)
+        // Respuesta al ESP32: se escribe al cambiar y se repite como latido (ConexionEsp32).
+        // Al terminar la ruta se deja de indicar giros y solo queda el latido "H".
+        esp32.enviarIndicacion(guia.indicacion.takeUnless { guia.finalizada })
 
-        SesionGuia.actualizar { it.copy(fuentes = fuentes, guia = guia, esp32 = esp32.estado.value) }
+        SesionGuia.actualizar {
+            it.copy(
+                fuentes = fuentes,
+                guia = guia,
+                esp32 = esp32.estado.value,
+                ultimaLetraEsp32 = esp32.ultimaLetraEnviada.takeIf { esp32.estado.value.conectado }
+            )
+        }
         actualizarNotificacion(
             when {
-                guia.finalizada -> "Has llegado al final de la ruta."
-                guia.indicacion != null && guia.siguientePunto != null ->
-                    "${guia.indicacion.texto} hacia ${guia.siguientePunto.nombre}"
+                guia.finalizada -> "Ruta completada."
+                guia.siguientePunto != null && guia.distanciaSiguientePuntoMetros != null ->
+                    "Hacia ${guia.siguientePunto.nombre}: ${guia.distanciaSiguientePuntoMetros.toInt()} m · " +
+                            "quedan ${EstimadorTiempo.formatear(guia.tiempoRestanteSegundos)}"
                 else -> "Buscando posición…"
             }
         )
@@ -279,6 +292,15 @@ class ServicioGuia : Service() {
         SesionGuia.actualizar { it.copy(simulacion = activa) }
     }
 
+    private fun cambiarDispositivo(activo: Boolean) {
+        PreferenciasGuia.guardarDispositivoActivo(this, activo)
+        dispositivoActivo = activo
+        if (motor != null) {
+            if (activo) esp32.iniciar() else esp32.detener()
+        }
+        SesionGuia.actualizar { it.copy(dispositivoActivo = activo, esp32 = esp32.estado.value) }
+    }
+
     private fun iniciarSimulacion() {
         val motorActual = motor ?: return
         if (trabajoSimulacion?.isActive == true) return
@@ -308,12 +330,21 @@ class ServicioGuia : Service() {
      */
     private fun enviarPosicionAhora() {
         val id = usuarioId ?: return
+        // "Compartir ubicación" ya la envía con el mismo GPS; así no se duplican las escrituras.
+        if (!simulacion && EstadoServicioSeguimiento.activo.value) {
+            SesionGuia.actualizar { it.copy(compartidaPorOtroServicio = true, errorEnvioPosicion = null) }
+            return
+        }
         val coordenada = posicionParaRastreo() ?: return
         scope.launch(Dispatchers.IO) {
             try {
                 seguimientoRepository.guardarPosicion(id, coordenada)
                 SesionGuia.actualizar {
-                    it.copy(ultimoEnvioPosicionMs = System.currentTimeMillis(), errorEnvioPosicion = null)
+                    it.copy(
+                        ultimoEnvioPosicionMs = System.currentTimeMillis(),
+                        errorEnvioPosicion = null,
+                        compartidaPorOtroServicio = false
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -329,17 +360,14 @@ class ServicioGuia : Service() {
         if (simulacion) {
             lecturaSimulada?.let { return CoordenadaCapturada(it.valor.first.latitud, it.valor.first.longitud, 0f) }
         }
-        posicionTelefono?.takeIf { ahora - it.instanteMs <= ConfigGuia.VIGENCIA_POSICION_TELEFONO_MS }?.let {
-            return CoordenadaCapturada(
+        // El encargado siempre recibe el GPS del teléfono, no el del ESP32.
+        return posicionTelefono?.takeIf { ahora - it.instanteMs <= ConfigGuia.VIGENCIA_POSICION_TELEFONO_MS }?.let {
+            CoordenadaCapturada(
                 it.valor.latitude,
                 it.valor.longitude,
                 if (it.valor.hasAccuracy()) it.valor.accuracy else 0f
             )
         }
-        // Respaldo: si el teléfono no tiene posición, se usa el GPS del ESP32 con fix válido.
-        return posicionEsp32
-            ?.takeIf { it.valor.fixValido && ahora - it.instanteMs <= ConfigGuia.VIGENCIA_POSICION_ESP32_MS }
-            ?.let { CoordenadaCapturada(it.valor.coordenada.latitud, it.valor.coordenada.longitud, 0f) }
     }
 
     private fun detenerSesion() {
@@ -404,7 +432,7 @@ class ServicioGuia : Service() {
                 "Guía de ruta de EcoGuía",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Guía activa y rastreo durante una ruta en curso."
+                description = "Progreso de la ruta en curso y ubicación compartida con el encargado."
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(canal)
         }
@@ -459,6 +487,8 @@ class ServicioGuia : Service() {
         const val ACTION_DETENER = "com.proyecto.ecoguia.action.DETENER_GUIA"
         const val ACTION_SIMULACION = "com.proyecto.ecoguia.action.SIMULACION_GUIA"
         const val ACTION_VELOCIDAD = "com.proyecto.ecoguia.action.VELOCIDAD_GUIA"
+        const val ACTION_DISPOSITIVO = "com.proyecto.ecoguia.action.DISPOSITIVO_GUIA"
+        const val EXTRA_DISPOSITIVO = "dispositivo"
         const val EXTRA_SEGUIMIENTO_ID = "seguimiento_id"
         const val EXTRA_SIMULACION = "simulacion"
         const val EXTRA_VELOCIDAD = "velocidad"

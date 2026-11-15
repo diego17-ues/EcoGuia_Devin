@@ -49,7 +49,9 @@ data class ConexionEsp32Estado(
  * - Busca el ESP32 por nombre entre los dispositivos ya emparejados (no escanea).
  * - Lee líneas en una corrutina de E/S, nunca en el hilo principal.
  * - Reintenta la conexión cada [ConfigGuia.INTERVALO_RECONEXION_MS] mientras esté iniciada.
- * - Envía el latido "H" cada segundo y las indicaciones L/R/F solo cuando cambian.
+ * - Envía la indicación L/R/F en cuanto cambia y la repite cada segundo como latido (o "H" si
+ *   aún no hay indicación). El firmware sale de MODO_APP tras 3 s sin mensajes de la app, y
+ *   repetir la letra mantiene el estado del buzzer aunque trate cualquier carácter como estado.
  */
 class ConexionEsp32(
     private val contexto: Context,
@@ -79,10 +81,15 @@ class ConexionEsp32(
         trabajo = null
         cerrarSocket()
         ultimaIndicacionEnviada = null
+        ultimaLetraEnviada = null
         estadoInterno.value = ConexionEsp32Estado()
     }
 
-    /** Guarda la indicación y la envía solo si es distinta a la última enviada. */
+    /** Última letra escrita al ESP32 (L, R, F o H), para mostrarla en pantalla. */
+    @Volatile var ultimaLetraEnviada: Char? = null
+        private set
+
+    /** Guarda la indicación y la envía de inmediato solo si es distinta a la última enviada. */
     fun enviarIndicacion(indicacion: Indicacion?) {
         indicacionDeseada = indicacion
         if (indicacion == null || indicacion == ultimaIndicacionEnviada) return
@@ -90,6 +97,9 @@ class ConexionEsp32(
             ultimaIndicacionEnviada = indicacion
         }
     }
+
+    /** Lo que se repite cada segundo: la indicación vigente o, si no hay, "H". */
+    private fun mensajeLatido(): String = ParserMensajesEsp32.mensajeLatido(indicacionDeseada)
 
     private suspend fun bucleConexion() {
         var primerIntento = true
@@ -112,7 +122,7 @@ class ConexionEsp32(
                 if (estadoInterno.value.estado != EstadoEsp32.SIN_PERMISO) {
                     actualizar(
                         EstadoEsp32.RECONECTANDO,
-                        "Sin conexión con el dispositivo. Reintentando… Se usa el GPS del teléfono."
+                        "Sin conexión con el dispositivo. Reintentando cada 3 s…"
                     )
                 }
             }
@@ -143,8 +153,8 @@ class ConexionEsp32(
         if (dispositivo == null) {
             actualizar(
                 EstadoEsp32.NO_EMPAREJADO,
-                "\"$nombreDispositivo\" no está emparejado. Empareja el dispositivo desde " +
-                        "Ajustes > Bluetooth del teléfono. Mientras tanto se usa el GPS del teléfono."
+                "\"$nombreDispositivo\" no está emparejado. Enciende el dispositivo y pulsa " +
+                        "\"Emparejar dispositivo\"."
             )
         }
         return dispositivo
@@ -163,7 +173,7 @@ class ConexionEsp32(
 
         val latido = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                if (!escribirLinea(ParserMensajesEsp32.LATIDO)) break
+                if (!escribirLinea(mensajeLatido())) break
                 delay(ConfigGuia.INTERVALO_LATIDO_MS)
             }
         }
@@ -189,6 +199,7 @@ class ConexionEsp32(
                 flujo.write("$texto\n".toByteArray(Charsets.US_ASCII))
                 flujo.flush()
             }
+            ultimaLetraEnviada = texto.firstOrNull()
             true
         } catch (e: IOException) {
             Log.w(TAG, "No se pudo enviar \"$texto\" al ESP32: ${e.message}")

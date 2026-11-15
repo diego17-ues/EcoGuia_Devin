@@ -1,42 +1,56 @@
 package com.proyecto.ecoguia.screen
 
 import android.Manifest
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.proyecto.ecoguia.bluetooth.EmparejamientoEsp32
 import com.proyecto.ecoguia.bluetooth.EstadoEsp32
 import com.proyecto.ecoguia.guia.EstimadorTiempo
 import com.proyecto.ecoguia.guia.FuentePosicion
+import com.proyecto.ecoguia.guia.FuenteRumbo
 import com.proyecto.ecoguia.guia.PreferenciasGuia
 import com.proyecto.ecoguia.service.EstadoSesionGuia
 import com.proyecto.ecoguia.service.SesionGuia
@@ -80,14 +94,14 @@ internal fun TarjetaPermisosGuia(onConceder: () -> Unit) {
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                "Permisos para guiarte",
+                "Permisos para la ruta",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 modifier = Modifier.semantics { heading() }
             )
-            Text("• Ubicación precisa: saber dónde estás para indicarte el camino y compartir tu posición con tu encargado cada 10 segundos.")
-            Text("• Dispositivos cercanos (Bluetooth): conectar con tu dispositivo EcoGuía para que vibre o suene al girar.")
-            Text("• Notificaciones: mostrar que la guía sigue activa con la pantalla apagada.")
+            Text("• Ubicación precisa: mostrar tu avance en la ruta y compartir tu posición con tu encargado cada 10 segundos.")
+            Text("• Dispositivos cercanos (Bluetooth): conectar con tu dispositivo EcoGuía, que te guía con su buzzer.")
+            Text("• Notificaciones: mostrar que la ruta sigue activa con la pantalla apagada.")
             Button(
                 onClick = onConceder,
                 modifier = Modifier
@@ -98,12 +112,12 @@ internal fun TarjetaPermisosGuia(onConceder: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * Panel de la ruta en curso. La app no guía a la persona: muestra la ruta y el progreso, el
+ * estado del dispositivo EcoGuía (que guía con el buzzer) y el envío de la ubicación al encargado.
+ */
 @Composable
 internal fun PanelGuiaRuta(sesion: EstadoSesionGuia) {
-    val contexto = LocalContext.current
-    val guia = sesion.guia
-
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (sesion.simulacion) {
             Text(
@@ -112,88 +126,56 @@ internal fun PanelGuiaRuta(sesion: EstadoSesionGuia) {
                 fontWeight = FontWeight.Bold
             )
         }
+        TarjetaProgreso(sesion)
+        TarjetaObstaculo(sesion)
+        TarjetaDispositivo(sesion)
+        TarjetaUbicacion(sesion)
+        TarjetaSimulacion(sesion)
+        SelectorVelocidad(sesion)
+    }
+}
 
-        // Indicación principal, en texto grande; TalkBack la anuncia cuando cambia.
-        val textoIndicacion = when {
-            sesion.cargando -> "Preparando la guía…"
-            guia == null -> "Esperando datos de posición…"
-            guia.finalizada -> "Has llegado al final de la ruta"
-            guia.indicacion == null -> "Buscando posición y rumbo…"
-            else -> guia.indicacion.texto
+@Composable
+private fun TarjetaProgreso(sesion: EstadoSesionGuia) {
+    val guia = sesion.guia
+    Tarjeta {
+        Text("Progreso de la ruta", fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        if (guia == null) {
+            Text(if (sesion.cargando) "Preparando la ruta…" else "Esperando la posición…", fontSize = 18.sp)
+            return@Tarjeta
         }
+        val avance = if (guia.distanciaTotalMetros > 0)
+            ((guia.distanciaTotalMetros - guia.distanciaRestanteMetros) / guia.distanciaTotalMetros).coerceIn(0.0, 1.0)
+        else 0.0
+        val porcentaje = if (guia.finalizada) 100 else (avance * 100).roundToInt()
         Text(
-            textoIndicacion,
-            fontSize = 32.sp,
-            lineHeight = 38.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            if (guia.finalizada) "Ruta completada" else "$porcentaje % recorrido",
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Bold
         )
-        guia?.siguientePunto?.let { punto ->
+        LinearProgressIndicator(
+            progress = { porcentaje / 100f },
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "Progreso de la ruta: $porcentaje por ciento" }
+        )
+        guia.siguientePunto?.takeUnless { guia.finalizada }?.let { punto ->
             Text(
                 "Siguiente punto: ${punto.nombre}" +
                         (guia.distanciaSiguientePuntoMetros?.let { " a ${it.roundToInt()} m" } ?: ""),
-                fontSize = 20.sp
+                fontSize = 18.sp
             )
         }
-
-        guia?.let {
-            Tarjeta {
-                Text("Tiempo estimado", fontWeight = FontWeight.Bold)
-                Text(
-                    "Restante: ${EstimadorTiempo.formatear(it.tiempoRestanteSegundos)} " +
-                            "(${it.distanciaRestanteMetros.roundToInt()} m)",
-                    fontSize = 22.sp
-                )
-                Text(
-                    "Total de la ruta: ${EstimadorTiempo.formatear(it.tiempoTotalSegundos)} " +
-                            "(${it.distanciaTotalMetros.roundToInt()} m)"
-                )
-            }
-        }
-
-        TarjetaObstaculo(sesion)
-
-        // Mantener pulsada esta tarjeta activa o desactiva el modo simulación (botón oculto).
-        Card(
-            colors = CardDefaults.cardColors(containerColor = colorTarjeta),
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = {},
-                    onLongClick = { SesionGuia.cambiarSimulacion(contexto, !sesion.simulacion) },
-                    onLongClickLabel = if (sesion.simulacion) "Desactivar simulación" else "Activar simulación"
-                )
-        ) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Fuente activa", fontWeight = FontWeight.Bold)
-                val fuentes = sesion.fuentes
-                Text("Posición: ${fuentes?.fuentePosicion?.texto ?: FuentePosicion.NINGUNA.texto}")
-                Text("Rumbo: ${fuentes?.fuenteRumbo?.texto ?: "Sin rumbo todavía"}" +
-                        (fuentes?.rumbo?.let { " (${it.roundToInt()}°)" } ?: ""))
-                Text(
-                    sesion.esp32.mensaje,
-                    color = if (sesion.esp32.estado == EstadoEsp32.CONECTADO) Color(0xFF1B5E20) else Color(0xFF8A4B00)
-                )
-                if (!sesion.gpsTelefonoDisponible) {
-                    Text("Sin permiso de ubicación: el GPS del teléfono no está disponible.", color = MaterialTheme.colorScheme.error)
-                }
-                if (!sesion.rumboTelefonoDisponible) {
-                    Text("Este teléfono no tiene brújula; el rumbo depende del dispositivo EcoGuía.", color = MaterialTheme.colorScheme.error)
-                }
-                Text(
-                    sesion.ultimoEnvioPosicionMs?.let {
-                        "Ubicación compartida con tu encargado: " +
-                                DateFormat.getTimeInstance(DateFormat.MEDIUM, Locale.forLanguageTag("es-SV")).format(Date(it))
-                    } ?: "Ubicación compartida con tu encargado: pendiente",
-                    color = Color.DarkGray
-                )
-                sesion.errorEnvioPosicion?.let {
-                    Text("No se pudo compartir la ubicación: $it", color = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-
-        SelectorVelocidad(sesion)
+        Text(
+            "Restante: ${EstimadorTiempo.formatear(guia.tiempoRestanteSegundos)} " +
+                    "(${guia.distanciaRestanteMetros.roundToInt()} m)",
+            fontSize = 18.sp
+        )
+        Text(
+            "Total de la ruta: ${EstimadorTiempo.formatear(guia.tiempoTotalSegundos)} " +
+                    "(${guia.distanciaTotalMetros.roundToInt()} m)"
+        )
+        Text("Posición tomada de: ${sesion.fuentes?.fuentePosicion?.texto ?: FuentePosicion.NINGUNA.texto}", color = Color.DarkGray)
     }
 }
 
@@ -207,22 +189,171 @@ private fun TarjetaObstaculo(sesion: EstadoSesionGuia) {
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (obstaculo == null) {
-                Text("Sin obstáculos registrados en lo que queda de la ruta.", fontSize = 18.sp)
+                Text("Sin obstáculos registrados en lo que queda de la ruta.")
                 return@Column
             }
-            Text("Siguiente obstáculo", fontWeight = FontWeight.Bold)
-            Text(obstaculo.punto.nombre, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
-            Text(
-                buildString {
-                    append(obstaculo.distanciaMetros?.let { "A ${it.roundToInt()} m" } ?: "Distancia desconocida")
-                    obstaculo.indicacion?.let { append(", ${it.sentido}") }
-                },
-                fontSize = 24.sp
-            )
+            Text("Siguiente obstáculo: ${obstaculo.punto.nombre}", fontWeight = FontWeight.Bold)
+            Text(obstaculo.distanciaMetros?.let { "A ${it.roundToInt()} m" } ?: "Distancia desconocida")
             if (guia.obstaculosPendientes > 1) {
                 Text("Quedan ${guia.obstaculosPendientes} obstáculos en la ruta.")
             }
         }
+    }
+}
+
+/** Encender, emparejar y ver el estado del dispositivo EcoGuía con pocos toques. */
+@Composable
+private fun TarjetaDispositivo(sesion: EstadoSesionGuia) {
+    val contexto = LocalContext.current
+    var aviso by remember { mutableStateOf<String?>(null) }
+    val lanzadorActivar = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    val lanzadorEmparejar = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { resultado ->
+        aviso = when {
+            resultado.resultCode != Activity.RESULT_OK -> null
+            EmparejamientoEsp32.emparejar(resultado.data) ->
+                "Confirma el emparejamiento si Android lo pide. La app se conectará sola en unos segundos."
+            else -> {
+                abrir(contexto, EmparejamientoEsp32.intentAjustesBluetooth())
+                "Empareja \"EcoGuia_ESP32\" en Ajustes > Bluetooth y vuelve a la app."
+            }
+        }
+    }
+    val esp32 = sesion.esp32
+
+    Tarjeta {
+        FilaInterruptor(
+            titulo = "Dispositivo EcoGuía",
+            subtitulo = "Te guía con el buzzer; la app le responde si te desvías.",
+            activo = sesion.dispositivoActivo,
+            alCambiar = { SesionGuia.cambiarDispositivo(contexto, it) }
+        )
+        if (!sesion.dispositivoActivo) {
+            Text("Desactivado: solo se muestra el progreso y se comparte tu ubicación.", color = Color.DarkGray)
+            return@Tarjeta
+        }
+        Text(
+            esp32.mensaje,
+            fontWeight = FontWeight.Bold,
+            color = if (esp32.conectado) Color(0xFF1B5E20) else Color(0xFF8A4B00)
+        )
+        when (esp32.estado) {
+            EstadoEsp32.BLUETOOTH_APAGADO -> BotonAccion("Activar Bluetooth") {
+                try {
+                    lanzadorActivar.launch(EmparejamientoEsp32.intentActivarBluetooth())
+                } catch (_: RuntimeException) {
+                    abrir(contexto, EmparejamientoEsp32.intentAjustesBluetooth())
+                }
+            }
+            EstadoEsp32.NO_EMPAREJADO -> BotonAccion("Emparejar dispositivo") {
+                aviso = "Buscando \"EcoGuia_ESP32\"…"
+                EmparejamientoEsp32.buscar(
+                    contexto,
+                    alEncontrar = { lanzadorEmparejar.launch(IntentSenderRequest.Builder(it).build()) },
+                    alFallar = { motivo ->
+                        aviso = "$motivo Puedes emparejarlo en Ajustes > Bluetooth."
+                        abrir(contexto, EmparejamientoEsp32.intentAjustesBluetooth())
+                    }
+                )
+            }
+            EstadoEsp32.SIN_PERMISO -> BotonAccion("Abrir permisos de la app") {
+                abrir(
+                    contexto,
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", contexto.packageName, null))
+                )
+            }
+            else -> Unit
+        }
+        if (esp32.conectado) {
+            val fuentes = sesion.fuentes
+            Text(
+                "Rumbo del MPU: " + (fuentes?.rumbo?.takeIf { fuentes.fuenteRumbo == FuenteRumbo.ESP32 }
+                    ?.let { "${it.roundToInt()}°" } ?: "esperando datos…")
+            )
+            Text("Respuesta enviada al dispositivo: ${describirLetra(sesion.ultimaLetraEsp32)}")
+        }
+        aviso?.let { Text(it, color = Color.DarkGray) }
+    }
+}
+
+private fun describirLetra(letra: Char?): String = when (letra) {
+    'L' -> "L (izquierda, 3 pitidos)"
+    'R' -> "R (derecha, 1 pitido)"
+    'F' -> "F (rumbo correcto, sin pitidos)"
+    'H' -> "H (enlace activo, sin indicación)"
+    else -> "ninguna todavía"
+}
+
+@Composable
+private fun TarjetaUbicacion(sesion: EstadoSesionGuia) {
+    Tarjeta {
+        Text("Ubicación para tu encargado", fontWeight = FontWeight.Bold)
+        Text(
+            if (sesion.simulacion) "En simulación se comparte la posición simulada."
+            else "Se comparte el GPS del teléfono cada 10 segundos."
+        )
+        if (!sesion.gpsTelefonoDisponible) {
+            Text("Sin permiso de ubicación: no se puede compartir tu posición.", color = MaterialTheme.colorScheme.error)
+        }
+        Text(
+            when {
+                sesion.compartidaPorOtroServicio -> "Se está enviando con \"Compartir ubicación\"."
+                sesion.ultimoEnvioPosicionMs != null -> "Último envío: " +
+                        DateFormat.getTimeInstance(DateFormat.MEDIUM, Locale.forLanguageTag("es-SV"))
+                            .format(Date(sesion.ultimoEnvioPosicionMs))
+                else -> "Último envío: pendiente"
+            },
+            color = Color.DarkGray
+        )
+        sesion.errorEnvioPosicion?.let {
+            Text("No se pudo compartir la ubicación: $it", color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun TarjetaSimulacion(sesion: EstadoSesionGuia) {
+    val contexto = LocalContext.current
+    Tarjeta {
+        FilaInterruptor(
+            titulo = "Modo simulación",
+            subtitulo = "Recorre la ruta sin caminar, para probar sin GPS. Si el dispositivo está conectado, recibe L/R/F.",
+            activo = sesion.simulacion,
+            alCambiar = { SesionGuia.cambiarSimulacion(contexto, it) }
+        )
+    }
+}
+
+@Composable
+private fun FilaInterruptor(titulo: String, subtitulo: String, activo: Boolean, alCambiar: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .toggleable(value = activo, role = Role.Switch, onValueChange = alCambiar)
+    ) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(titulo, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(subtitulo, color = Color.DarkGray)
+        }
+        Switch(checked = activo, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun BotonAccion(texto: String, alPulsar: () -> Unit) {
+    OutlinedButton(
+        onClick = alPulsar,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+    ) { Text(texto) }
+}
+
+private fun abrir(contexto: Context, intent: Intent) {
+    try {
+        contexto.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
     }
 }
 

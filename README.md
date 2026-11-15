@@ -1,7 +1,7 @@
 # EcoGuia_Devin
 
 App Android (Kotlin + Jetpack Compose) que guía a una persona no vidente por rutas definidas
-en Supabase, con un dispositivo ESP32 (GPS NEO-6M, MPU9250 y buzzer) conectado por
+en Supabase, con un dispositivo ESP32 (GPS NEO-7M, MPU9250 y buzzer) conectado por
 Bluetooth Classic, y que permite al encargado ver su posición y ruta activa.
 
 ## Configuración
@@ -25,31 +25,41 @@ Compilar y probar:
 En Supabase ejecutar `supabase/seguimiento.sql` (RLS, función del encargado, Realtime y la
 tabla `posiciones_usuario` con `actualizado_utc`; renombra `fecha` si existía).
 
-## Módulo de guía
+## Módulo de ruta y dispositivo
+
+Reparto de tareas:
+
+- **Dispositivo EcoGuía (ESP32):** guía a la persona con el buzzer. Envía su GPS (NEO-7M) y el
+  rumbo del MPU9250.
+- **App:** no da indicaciones a la persona. Muestra la ruta en el mapa y el progreso, calcula si
+  la persona se desvió y le responde al dispositivo con `L`/`R`/`F`. Envía al encargado la
+  ubicación del **GPS del teléfono** cada 10 s.
 
 | Pieza | Archivo |
 |---|---|
 | Constantes (umbrales, tiempos, nombre del ESP32, UUID SPP) | `guia/ConfigGuia.kt` |
 | Distancia Haversine y rumbo | `guia/Haversine.kt` |
-| Indicación L/R/F (umbral ±20°) | `guia/DireccionRelativa.kt` |
+| Respuesta L/R/F para el dispositivo (umbral ±20°) | `guia/DireccionRelativa.kt` |
 | Tiempo total/restante (velocidad configurable, 1.2 m/s por defecto) | `guia/EstimadorTiempo.kt` |
-| Avance por nodos, obstáculos, estado de guía | `guia/MotorGuia.kt` |
+| Avance por nodos, obstáculos, progreso | `guia/MotorGuia.kt` |
 | Elección de fuente de posición/rumbo | `guia/SelectorFuente.kt` |
 | Simulación de recorrido | `guia/SimuladorRuta.kt` |
-| Protocolo y conexión con el ESP32 | `bluetooth/MensajesEsp32.kt`, `bluetooth/ConexionEsp32.kt` |
-| GPS y brújula del teléfono | `sensores/SensoresTelefono.kt` |
-| Servicio en primer plano (guía + rastreo cada 10 s) | `service/ServicioGuia.kt`, `service/SesionGuia.kt` |
-| Pantalla de la ruta en curso | `screen/PanelGuiaRuta.kt`, `screen/RutaEnCursoScreen.kt` |
+| Protocolo, conexión y emparejamiento del ESP32 | `bluetooth/MensajesEsp32.kt`, `bluetooth/ConexionEsp32.kt`, `bluetooth/EmparejamientoEsp32.kt` |
+| GPS del teléfono | `sensores/SensoresTelefono.kt` |
+| Servicio en primer plano (progreso + rastreo cada 10 s) | `service/ServicioGuia.kt`, `service/SesionGuia.kt` |
+| Pantalla de la ruta en curso | `screen/PanelGuiaRuta.kt`, `screen/RutaEnCursoScreen.kt`, `screen/MapaRutaComposable.kt` |
 
 ### Fuentes de posición y rumbo
 
-1. ESP32 conectado y `P` con `fix=1` reciente (≤ 3 s): posición del NEO-6M.
-2. ESP32 conectado y `Y` reciente (≤ 1 s): rumbo del MPU9250.
-3. Si no: GPS (`FusedLocationProviderClient`) y brújula (rotation vector, o acelerómetro +
-   magnetómetro) del teléfono.
+1. **Posición de la ruta:** si el ESP32 está conectado y envió un `P` válido en los últimos 3 s,
+   se usa el NEO-7M; si no, el GPS del teléfono (`FusedLocationProviderClient`).
+2. **Rumbo:** solo el MPU9250 (`Y` recibido en el último segundo). Como `rumboMagnetico()` es
+   magnético, se corrige con la declinación local (`ConfigGuia.RUMBO_ESP32_ES_MAGNETICO`). Sin
+   rumbo del dispositivo no se calcula ninguna respuesta: solo se muestra el progreso.
+3. **Ubicación del encargado:** siempre el GPS del teléfono, nunca el del ESP32. Si
+   "Compartir ubicación" ya está activo, el servicio de la ruta no la envía de nuevo.
 
-El cambio de fuente no reinicia la ruta ni el progreso. El rastreo para el encargado usa siempre
-el GPS del teléfono (el del ESP32 solo como respaldo).
+El cambio de fuente no reinicia la ruta ni el progreso.
 
 ### Obstáculos
 
@@ -64,34 +74,44 @@ alter table public.nodos add column es_obstaculo boolean not null default false;
 ## Bluetooth Classic (ESP32)
 
 - RFCOMM con UUID SPP `00001101-0000-1000-8000-00805F9B34FB`; no se usa BLE.
-- El ESP32 debe estar **emparejado desde Ajustes de Android** con el nombre `EcoGuia_ESP32`
-  (`ConfigGuia.NOMBRE_DISPOSITIVO_ESP32`). La app no escanea; si no está emparejado lo indica.
-- Reconexión automática cada 3 s. Las líneas inválidas se registran (`adb logcat -s EcoGuiaEsp32`) y se ignoran.
+- Nombre esperado: `EcoGuia_ESP32` (`ConfigGuia.NOMBRE_DISPOSITIVO_ESP32`).
+- La tarjeta **"Dispositivo EcoGuía"** de la ruta en curso tiene un interruptor para usar o no el
+  dispositivo. Además muestra un botón **"Activar Bluetooth"** si está apagado y
+  **"Emparejar dispositivo"** si no está emparejado. Ese botón usa `CompanionDeviceManager`:
+  Android busca el ESP32, muestra su propio diálogo y la app crea el vínculo. Si el teléfono no
+  lo permite, se abre Ajustes > Bluetooth.
+- Reconexión automática cada 3 s. Las líneas inválidas se registran
+  (`adb logcat -s EcoGuiaEsp32`) y se ignoran.
 
 Protocolo (texto, cada mensaje termina en `\n`):
 
 | Sentido | Mensaje | Significado |
 |---|---|---|
-| ESP32 → app | `Y,rumbo,giro` | Rumbo 0–360° y velocidad de giro °/s del MPU9250 |
-| ESP32 → app | `P,latitud,longitud,fix` | Posición del NEO-6M; `fix` = 1 válido, 0 sin fix |
-| app → ESP32 | `L` / `R` / `F` | Izquierda / derecha / recto (solo cuando cambia) |
-| app → ESP32 | `H` | Latido cada 1 s mientras hay sesión |
+| ESP32 → app | `Y,rumbo,giro` | `rumboMagnetico()` y `mpu.getGyroZ()`, 10 Hz en `MODO_APP` |
+| ESP32 → app | `P,latitud,longitud[,fix]` | Posición del NEO-7M; `fix` = 1 válido, 0 sin fix. Sin `fix` se toma como válida; `0,0` se toma como sin fix; los campos extra se ignoran |
+| app → ESP32 | `L` / `R` / `F` | Izquierda (3 pitidos) / derecha (1 pitido) / rumbo correcto (silencio). Se envía al cambiar y se repite cada 1 s como latido |
+| app → ESP32 | `H` | Latido cada 1 s cuando aún no hay indicación |
 
-**Firmware:** el firmware no está en este repositorio, así que no se pudo verificar si ya
-envía `P` ni si reconoce `H`. Requisitos para el firmware: enviar `Y` y `P` como arriba, ignorar
-`H` (o usarlo para detectar que la app sigue conectada; respaldo propio tras 3 s sin datos) y
-sonar el buzzer (GPIO25) con `L/R/F`.
+**Firmware:** según el fragmento de `MODO_APP` compartido, el ESP32 envía `Y` a 10 Hz, pita
+con `L`/`R` y, tras 3 s sin mensajes de la app, avisa y vuelve a su modo GPS propio. Repetir la
+letra vigente como latido mantiene ese enlace activo y no cambia el estado del buzzer, aunque
+el firmware tome cualquier carácter recibido como `estadoGuia`. **Falta confirmar en el firmware
+completo:**
+
+- cómo y con qué formato envía `P`;
+- cómo trata la `H`;
+- si vuelve a `MODO_APP` cuando la app reconecta.
 
 ## Simulación (sin ESP32 ni GPS real)
 
-En la pantalla de ruta en curso, **mantener pulsada la tarjeta "Fuente activa"** para activar o
-desactivar la simulación (o poner `ConfigGuia.SIMULACION_ACTIVA_POR_DEFECTO = true`). Se recorre
-la ruta a la velocidad configurada con un rumbo que oscila ±35° para ver `L`, `R` y `F`, usando
-la misma UI y el mismo motor. La posición simulada también se envía al encargado. La app sigue
-pidiendo el permiso de ubicación porque el servicio de rastreo es de tipo `location`.
+En la ruta en curso, activar el interruptor **"Modo simulación"** (o poner
+`ConfigGuia.SIMULACION_ACTIVA_POR_DEFECTO = true`). Se recorre la ruta a la velocidad configurada,
+con un rumbo que oscila ±35°. Si el dispositivo está conectado, recibe `L`, `R` y `F` y se puede
+oír el buzzer; la tarjeta del dispositivo muestra la última letra enviada. En simulación se
+comparte con el encargado la posición simulada.
 
 ## Permisos
 
-Ubicación precisa (guía y rastreo), dispositivos cercanos `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN`
+Ubicación precisa (progreso y rastreo), dispositivos cercanos `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN`
 en Android 12+ (ESP32) y notificaciones (servicio activo con pantalla apagada). La pantalla de
 ruta explica cada uno antes de pedirlos.

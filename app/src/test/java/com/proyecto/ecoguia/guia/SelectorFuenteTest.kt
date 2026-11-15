@@ -1,6 +1,7 @@
 package com.proyecto.ecoguia.guia
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SelectorFuenteTest {
@@ -21,7 +22,6 @@ class SelectorFuenteTest {
         posicionEsp32 = Lectura(PosicionEsp32(esp32, fix), ahora - edadEsp32Ms),
         rumboEsp32 = Lectura(45.0, ahora - edadRumboEsp32Ms),
         posicionTelefono = Lectura(telefono, ahora - 1_000),
-        rumboTelefono = Lectura(90.0, ahora - 100),
         posicionSimulada = Lectura(Coordenada(0.0, 0.0), ahora),
         rumboSimulado = Lectura(180.0, ahora)
     )
@@ -43,18 +43,19 @@ class SelectorFuenteTest {
     }
 
     @Test
-    fun desconectadoSeUsaTodoDelTelefono() {
+    fun desconectadoSeUsaElGpsDelTelefonoYNoHayRumbo() {
         val elegidas = SelectorFuente.elegir(entradas(conectado = false), ahora)
         assertEquals(FuentePosicion.TELEFONO, elegidas.fuentePosicion)
-        assertEquals(FuenteRumbo.TELEFONO, elegidas.fuenteRumbo)
-        assertEquals(90.0, elegidas.rumbo!!, 1e-9)
+        assertEquals(telefono, elegidas.posicion)
+        assertEquals(FuenteRumbo.NINGUNA, elegidas.fuenteRumbo)
+        assertNull(elegidas.rumbo)
     }
 
     @Test
     fun lecturasViejasDelEsp32SeDescartan() {
         val elegidas = SelectorFuente.elegir(entradas(edadEsp32Ms = 5_000, edadRumboEsp32Ms = 2_000), ahora)
         assertEquals(FuentePosicion.TELEFONO, elegidas.fuentePosicion)
-        assertEquals(FuenteRumbo.TELEFONO, elegidas.fuenteRumbo)
+        assertEquals(FuenteRumbo.NINGUNA, elegidas.fuenteRumbo)
     }
 
     @Test
