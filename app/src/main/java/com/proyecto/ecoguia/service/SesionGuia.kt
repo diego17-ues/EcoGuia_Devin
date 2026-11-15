@@ -64,12 +64,6 @@ object SesionGuia {
         )
     }
 
-    /** Si la guía está activa, la pasa al nuevo seguimiento (p. ej. al elegir otra ruta). */
-    fun cambiarRuta(contexto: Context, seguimientoId: Long) {
-        if (!estadoInterno.value.activa && !estadoInterno.value.cargando) return
-        iniciar(contexto, seguimientoId)
-    }
-
     /** Activa o desactiva la simulación sin reiniciar la ruta. */
     fun cambiarSimulacion(contexto: Context, activa: Boolean) {
         enviarAccion(contexto, ServicioGuia.ACTION_SIMULACION) {

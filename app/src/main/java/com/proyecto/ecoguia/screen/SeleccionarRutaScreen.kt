@@ -71,7 +71,7 @@ private val tintaRuta = Color(0xFF19171F)
 @Composable
 fun SeleccionarRutaScreen(
     onVolver: () -> Unit,
-    onSeleccionarRuta: (Long, Long) -> Unit,
+    onSeleccionarRuta: (rutaId: Long, seguimientoId: Long, nombreRuta: String) -> Unit,
     onAjustesClick: () -> Unit = {},
     onAsistenteVozClick: () -> Unit = {}
 ) {
@@ -108,7 +108,7 @@ fun SeleccionarRutaScreen(
                 when (resultado) {
                     is ResultadoInicio.EnInicio -> {
                         val seguimientoId = seguimientoRepository.iniciarRuta(ruta.id)
-                        onSeleccionarRuta(ruta.id, seguimientoId)
+                        onSeleccionarRuta(ruta.id, seguimientoId, ruta.nombre)
                     }
                     is ResultadoInicio.FueraDeInicio -> {
                         error = ValidadorInicio.MENSAJE_FUERA_DE_INICIO

@@ -59,9 +59,15 @@ abre una conexión temporal con el ESP32 (hasta 6 s para conectar y 5 s para rec
 y usa el GPS del NEO-7M si ya tiene satélites. Si el dispositivo no está conectado, está desactivado
 o aún busca satélites, usa una lectura nueva del GPS del teléfono (máx. 15 s, tomada en paralelo).
 Solo se crea el seguimiento si la persona está a `ConfigGuia.RADIO_NODO_INICIO_METROS` (15 m) o
-menos del primer nodo. La conexión temporal se cierra y la guía vuelve a conectar al empezar. Si no, se muestra
+menos del primer nodo. Si no, se muestra
 "No se puede iniciar el recorrido, ubicate en el nodo de inicio para comenzar" junto con la
 distancia al nodo. Reanudar una ruta ya iniciada no vuelve a pedir esta validación.
+
+Si la validación pasa, la voz anuncia "Has iniciado la ruta <nombre>" y la guía (`ServicioGuia`)
+arranca en ese momento, sin esperar a abrir "Ruta en curso". La conexión temporal se cierra y la
+guía vuelve a conectar con el ESP32. Como el nodo de inicio ya se validó, la guía apunta desde el
+principio al segundo nodo: el rumbo del MPU se valida sobre el primer tramo desde el primer paso
+(si la persona mira en sentido contrario, se envía `L`/`R` de inmediato).
 
 ### Fuentes de posición y rumbo
 

@@ -581,10 +581,13 @@ class MainActivity : FragmentActivity() {
                                 onVolver = {
                                     pantalla = "principal_ciego"
                                 },
-                                onSeleccionarRuta = { _, seguimientoId ->
+                                onSeleccionarRuta = { _, seguimientoId, nombreRuta ->
                                     seguimientoIdActual = seguimientoId
-                                    SesionGuia.cambiarRuta(contexto, seguimientoId)
+                                    // La guía arranca ya, para validar el rumbo con el MPU desde el
+                                    // primer paso y no recién al abrir "Ruta en curso".
+                                    SesionGuia.iniciar(contexto, seguimientoId)
                                     pantalla = "principal_ciego"
+                                    hablar("Has iniciado la ruta $nombreRuta")
                                 },
                                 onAjustesClick = {
                                     pantalla = "ajustes_no_vidente"

@@ -171,7 +171,9 @@ class ServicioGuia : Service() {
                     estimador = EstimadorTiempo(velocidad),
                     // Se retoma en el nodo siguiente al último registrado. Si ese último es el destino
                     // (marcado a 15 m), se sigue apuntando a él para no dar la llegada por hecha.
-                    indiceInicial = if (indiceUltimo >= 0) (indiceUltimo + 1).coerceAtMost(ruta.puntos.lastIndex) else 0
+                    // En una ruta nueva el nodo de inicio ya se validó al confirmarla: se apunta al
+                    // segundo nodo para validar el rumbo sobre el primer tramo desde el primer momento.
+                    indiceInicial = (indiceUltimo + 1).coerceIn(1, ruta.puntos.lastIndex)
                 ).also {
                     indiceObjetivoAnterior = it.indiceObjetivo
                     destinoAvisado = false
