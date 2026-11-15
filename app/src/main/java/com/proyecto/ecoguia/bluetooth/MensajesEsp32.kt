@@ -9,11 +9,16 @@ import com.proyecto.ecoguia.guia.Indicacion
  *   Y,rumbo,giro            10 Hz (MODO_APP del firmware): rumboMagnetico() y mpu.getGyroZ() (°/s).
  *   P,latitud,longitud[,fix] Posición del GPS NEO-7M; fix = 1 válida, 0 no válida. Sin fix se
  *                            toma como válida; los campos adicionales (satélites, HDOP…) se ignoran.
+ *                            El ESP32 no la envía hasta encontrar satélites: mientras tanto la app
+ *                            usa el GPS del teléfono.
  *
- * App → ESP32 (respuesta para que el buzzer corrija el rumbo):
- *   L | R | F   Izquierda (3 pitidos), derecha (1 pitido), recto (silencio). Se envía al cambiar
- *               y se repite cada segundo como latido.
- *   H           Latido cuando todavía no hay indicación.
+ * App → ESP32 (el firmware hace sonar el buzzer con el patrón de cada letra):
+ *   L   Gira a la izquierda.       ┐ Letras de estado: se envían al cambiar y se repiten cada
+ *   R   Gira a la derecha.         │ segundo como latido.
+ *   A   Vas bien, sigue adelante.  ┘
+ *   N   Nodo alcanzado.            ┐ Avisos: una sola vez cuando ocurren.
+ *   F   Destino final.             ┘
+ *   H   Latido opcional (conexión abierta) cuando no hay letra de estado, p. ej. sin datos del MPU.
  */
 sealed interface MensajeEsp32 {
 

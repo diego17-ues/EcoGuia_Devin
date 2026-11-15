@@ -8,8 +8,10 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.proyecto.ecoguia.guia.AvisoRuta
 import com.proyecto.ecoguia.guia.ConfigGuia
 import com.proyecto.ecoguia.guia.Indicacion
 import kotlinx.coroutines.CoroutineScope
@@ -49,9 +51,13 @@ data class ConexionEsp32Estado(
  * - Busca el ESP32 por nombre entre los dispositivos ya emparejados (no escanea).
  * - Lee líneas en una corrutina de E/S, nunca en el hilo principal.
  * - Reintenta la conexión cada [ConfigGuia.INTERVALO_RECONEXION_MS] mientras esté iniciada.
- * - Envía la indicación L/R/F en cuanto cambia y la repite cada segundo como latido (o "H" si
- *   aún no hay indicación). El firmware sale de MODO_APP tras 3 s sin mensajes de la app, y
- *   repetir la letra mantiene el estado del buzzer aunque trate cualquier carácter como estado.
+ * - Envía la letra de estado L/R/A en cuanto cambia y la repite cada segundo como latido (o "H"
+ *   si no hay estado, p. ej. sin MPU o con la ruta terminada). El firmware sale de MODO_APP tras
+ *   3 s sin mensajes de la app, y repetir la letra mantiene el estado del buzzer aunque trate
+ *   cualquier carácter como estado.
+ * - Los avisos N (nodo alcanzado) y F (destino final) se envían una sola vez; después se pausan
+ *   las letras de estado [ConfigGuia.PAUSA_TRAS_AVISO_MS] para que el buzzer termine el aviso.
+ *   Si F no se pudo enviar, se reenvía al reconectar.
  */
 class ConexionEsp32(
     private val contexto: Context,
@@ -69,6 +75,8 @@ class ConexionEsp32(
     @Volatile private var salida: OutputStream? = null
     @Volatile private var ultimaIndicacionEnviada: Indicacion? = null
     @Volatile private var indicacionDeseada: Indicacion? = null
+    @Volatile private var pausaHastaMs = 0L
+    @Volatile private var destinoFinalPendiente = false
     private var trabajo: Job? = null
 
     fun iniciar() {
@@ -82,21 +90,36 @@ class ConexionEsp32(
         cerrarSocket()
         ultimaIndicacionEnviada = null
         ultimaLetraEnviada = null
+        pausaHastaMs = 0L
+        destinoFinalPendiente = false
         estadoInterno.value = ConexionEsp32Estado()
     }
 
-    /** Última letra escrita al ESP32 (L, R, F o H), para mostrarla en pantalla. */
+    /** Última letra escrita al ESP32 (L, R, A, N, F o H), para mostrarla en pantalla. */
     @Volatile var ultimaLetraEnviada: Char? = null
         private set
 
     /** Guarda la indicación y la envía de inmediato solo si es distinta a la última enviada. */
     fun enviarIndicacion(indicacion: Indicacion?) {
         indicacionDeseada = indicacion
-        if (indicacion == null || indicacion == ultimaIndicacionEnviada) return
+        if (indicacion == null || indicacion == ultimaIndicacionEnviada || enPausa()) return
         if (escribirLinea(indicacion.letra.toString())) {
             ultimaIndicacionEnviada = indicacion
         }
     }
+
+    /** Envía N o F una sola vez. Tras el aviso se vuelve a enviar la letra de estado vigente. */
+    fun enviarAviso(aviso: AvisoRuta) {
+        if (escribirLinea(aviso.letra.toString())) {
+            if (aviso == AvisoRuta.DESTINO_FINAL) destinoFinalPendiente = false
+            pausaHastaMs = SystemClock.elapsedRealtime() + ConfigGuia.PAUSA_TRAS_AVISO_MS
+            ultimaIndicacionEnviada = null
+        } else if (aviso == AvisoRuta.DESTINO_FINAL) {
+            destinoFinalPendiente = true
+        }
+    }
+
+    private fun enPausa(): Boolean = SystemClock.elapsedRealtime() < pausaHastaMs
 
     /** Lo que se repite cada segundo: la indicación vigente o, si no hay, "H". */
     private fun mensajeLatido(): String = ParserMensajesEsp32.mensajeLatido(indicacionDeseada)
@@ -169,11 +192,13 @@ class ConexionEsp32(
         // Tras reconectar se reenvía la indicación vigente.
         ultimaIndicacionEnviada = null
         actualizar(EstadoEsp32.CONECTADO, "Conectado a $nombreDispositivo.")
+        pausaHastaMs = 0L
+        if (destinoFinalPendiente) enviarAviso(AvisoRuta.DESTINO_FINAL)
         indicacionDeseada?.let { enviarIndicacion(it) }
 
         val latido = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                if (!escribirLinea(mensajeLatido())) break
+                if (!enPausa() && !escribirLinea(mensajeLatido())) break
                 delay(ConfigGuia.INTERVALO_LATIDO_MS)
             }
         }

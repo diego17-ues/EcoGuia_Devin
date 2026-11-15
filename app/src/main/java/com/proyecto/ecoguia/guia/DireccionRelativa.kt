@@ -7,7 +7,14 @@ package com.proyecto.ecoguia.guia
 enum class Indicacion(val letra: Char) {
     IZQUIERDA('L'),
     DERECHA('R'),
-    RECTO('F')
+    /** "Vas bien, sigue adelante". */
+    RECTO('A')
+}
+
+/** Avisos de un solo envío al ESP32 cuando cambia el avance de la ruta. */
+enum class AvisoRuta(val letra: Char) {
+    NODO_ALCANZADO('N'),
+    DESTINO_FINAL('F')
 }
 
 object DireccionRelativa {
@@ -22,7 +29,7 @@ object DireccionRelativa {
         return diferencia
     }
 
-    /** F si la diferencia está entre -umbral y +umbral; R si el objetivo está a la derecha; L si está a la izquierda. */
+    /** A (recto) si la diferencia está entre -umbral y +umbral; R si el objetivo está a la derecha; L si está a la izquierda. */
     fun calcular(
         rumboActual: Double,
         rumboObjetivo: Double,

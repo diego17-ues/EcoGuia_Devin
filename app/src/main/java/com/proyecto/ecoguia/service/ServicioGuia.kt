@@ -24,10 +24,13 @@ import com.proyecto.ecoguia.data.repository.NoVidenteRepository
 import com.proyecto.ecoguia.data.repository.RutaDisponible
 import com.proyecto.ecoguia.data.repository.RutasRepository
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
+import com.proyecto.ecoguia.guia.AvisoRuta
 import com.proyecto.ecoguia.guia.ConfigGuia
 import com.proyecto.ecoguia.guia.Coordenada
 import com.proyecto.ecoguia.guia.EntradasGuia
 import com.proyecto.ecoguia.guia.EstimadorTiempo
+import com.proyecto.ecoguia.guia.FuentePosicion
+import com.proyecto.ecoguia.guia.FuenteRumbo
 import com.proyecto.ecoguia.guia.Haversine
 import com.proyecto.ecoguia.guia.Lectura
 import com.proyecto.ecoguia.guia.MotorGuia
@@ -37,6 +40,7 @@ import com.proyecto.ecoguia.guia.PuntoRuta
 import com.proyecto.ecoguia.guia.RutaGuia
 import com.proyecto.ecoguia.guia.SelectorFuente
 import com.proyecto.ecoguia.guia.SimuladorRuta
+import com.proyecto.ecoguia.guia.ValidadorRumbo
 import com.proyecto.ecoguia.sensores.SensoresTelefono
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -53,8 +57,11 @@ import kotlinx.coroutines.withContext
 /**
  * Servicio en primer plano que mantiene la sesión de una ruta en curso:
  * - Calcula el progreso de la ruta (punto siguiente, distancia y tiempo restantes, obstáculo).
- * - Mantiene la conexión con el ESP32: recibe su GPS y el rumbo del MPU y le responde con L/R/F
- *   para que el buzzer corrija el rumbo. La app no guía a la persona por sí misma.
+ * - Mantiene la conexión con el ESP32: recibe su GPS (NEO-7M) y el rumbo del MPU9250, valida con
+ *   [ValidadorRumbo] si sigue la ruta y le responde con L/R/A, más N al alcanzar un nodo y F al
+ *   llegar al destino, para que el buzzer guíe. La app no guía a la persona por sí misma.
+ * - Sin el dispositivo conectado solo se marca la posición con el GPS del teléfono: sin MPU no
+ *   hay validación del rumbo ni letras de corrección.
  * - Envía la posición del GPS del teléfono a posiciones_usuario cada 10 s, al cambiar de ruta y
  *   al terminar.
  * Sigue funcionando con la pantalla apagada mientras la notificación esté visible.
@@ -71,9 +78,14 @@ class ServicioGuia : Service() {
     @Volatile private var posicionTelefono: Lectura<Location>? = null
     @Volatile private var posicionEsp32: Lectura<PosicionEsp32>? = null
     @Volatile private var rumboEsp32: Lectura<Double>? = null
+    @Volatile private var giroEsp32 = 0.0
     @Volatile private var lecturaSimulada: Lectura<Pair<Coordenada, Double>>? = null
 
     @Volatile private var motor: MotorGuia? = null
+    private val validador = ValidadorRumbo()
+    /** Nodo objetivo del cálculo anterior, para detectar cuándo se alcanza uno (aviso N). */
+    @Volatile private var indiceObjetivoAnterior = -1
+    @Volatile private var destinoAvisado = false
     private var simulador: SimuladorRuta? = null
     private var usuarioId: String? = null
     private var seguimientoId: Long? = null
@@ -160,7 +172,11 @@ class ServicioGuia : Service() {
                     // Se retoma en el nodo siguiente al último registrado. Si ese último es el destino
                     // (marcado a 15 m), se sigue apuntando a él para no dar la llegada por hecha.
                     indiceInicial = if (indiceUltimo >= 0) (indiceUltimo + 1).coerceAtMost(ruta.puntos.lastIndex) else 0
-                )
+                ).also {
+                    indiceObjetivoAnterior = it.indiceObjetivo
+                    destinoAvisado = false
+                    synchronized(validador) { validador.reiniciar() }
+                }
                 // Una ruta nueva no hereda el recorrido simulado de la anterior.
                 trabajoSimulacion?.cancel()
                 lecturaSimulada = null
@@ -233,16 +249,44 @@ class ServicioGuia : Service() {
             ahora
         )
         val guia = synchronized(motorActual) { motorActual.actualizar(fuentes.posicion, fuentes.rumbo) }
-        // Respuesta al ESP32: se escribe al cambiar y se repite como latido (ConexionEsp32).
-        // Al terminar la ruta se deja de indicar giros y solo queda el latido "H".
-        esp32.enviarIndicacion(guia.indicacion.takeUnless { guia.finalizada })
+
+        // Avisos de avance: N al alcanzar un nodo intermedio, F una sola vez al llegar al destino.
+        val nodoAlcanzado = guia.indiceObjetivo > indiceObjetivoAnterior && indiceObjetivoAnterior >= 0
+        indiceObjetivoAnterior = guia.indiceObjetivo
+        if (guia.finalizada) {
+            if (!destinoAvisado) {
+                destinoAvisado = true
+                esp32.enviarAviso(AvisoRuta.DESTINO_FINAL)
+            }
+        } else if (nodoAlcanzado) {
+            esp32.enviarAviso(AvisoRuta.NODO_ALCANZADO)
+        }
+
+        // Validación del rumbo con el MPU sobre el tramo actual (nodo alcanzado → nodo objetivo).
+        val validacion = synchronized(validador) {
+            if (nodoAlcanzado) validador.reiniciar()
+            validador.evaluar(
+                posicion = fuentes.posicion,
+                rumbo = fuentes.rumbo,
+                giroGradosSegundo = if (fuentes.fuenteRumbo == FuenteRumbo.ESP32) giroEsp32 else 0.0,
+                anterior = motorActual.ruta.puntos.getOrNull(guia.indiceObjetivo - 1)?.coordenada,
+                siguiente = guia.siguientePunto?.coordenada.takeUnless { guia.finalizada }
+            )
+        }
+        // Letra de estado L/R/A: se escribe al cambiar y se repite como latido (ConexionEsp32).
+        // Sin MPU o con la ruta terminada no hay letra y solo queda el latido "H".
+        esp32.enviarIndicacion(validacion.indicacion)
+        val conectado = esp32.estado.value.conectado
 
         SesionGuia.actualizar {
             it.copy(
                 fuentes = fuentes,
                 guia = guia,
                 esp32 = esp32.estado.value,
-                ultimaLetraEsp32 = esp32.ultimaLetraEnviada.takeIf { esp32.estado.value.conectado }
+                ultimaLetraEsp32 = esp32.ultimaLetraEnviada.takeIf { conectado },
+                validacion = validacion,
+                esp32BuscandoSatelites = conectado && !simulacion &&
+                        fuentes.fuentePosicion != FuentePosicion.ESP32
             )
         }
         actualizarNotificacion(
@@ -259,7 +303,10 @@ class ServicioGuia : Service() {
     private fun alRecibirEsp32(mensaje: MensajeEsp32) {
         val ahora = SystemClock.elapsedRealtime()
         when (mensaje) {
-            is MensajeEsp32.Rumbo -> rumboEsp32 = Lectura(rumboGeografico(mensaje.rumboGrados), ahora)
+            is MensajeEsp32.Rumbo -> {
+                giroEsp32 = mensaje.giroGradosSegundo
+                rumboEsp32 = Lectura(rumboGeografico(mensaje.rumboGrados), ahora)
+            }
             is MensajeEsp32.Posicion -> posicionEsp32 = Lectura(
                 PosicionEsp32(Coordenada(mensaje.latitud, mensaje.longitud), mensaje.fixValido),
                 ahora

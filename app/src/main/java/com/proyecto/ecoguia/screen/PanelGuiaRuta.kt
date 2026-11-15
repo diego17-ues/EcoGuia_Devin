@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.proyecto.ecoguia.bluetooth.EmparejamientoEsp32
 import com.proyecto.ecoguia.bluetooth.EstadoEsp32
+import com.proyecto.ecoguia.guia.EstadoValidacion
 import com.proyecto.ecoguia.guia.EstimadorTiempo
 import com.proyecto.ecoguia.guia.FuentePosicion
 import com.proyecto.ecoguia.guia.FuenteRumbo
@@ -127,6 +128,7 @@ internal fun PanelGuiaRuta(sesion: EstadoSesionGuia) {
             )
         }
         TarjetaProgreso(sesion)
+        TarjetaValidacion(sesion)
         TarjetaObstaculo(sesion)
         TarjetaDispositivo(sesion)
         TarjetaUbicacion(sesion)
@@ -176,6 +178,49 @@ private fun TarjetaProgreso(sesion: EstadoSesionGuia) {
                     "(${guia.distanciaTotalMetros.roundToInt()} m)"
         )
         Text("Posición tomada de: ${sesion.fuentes?.fuentePosicion?.texto ?: FuentePosicion.NINGUNA.texto}", color = Color.DarkGray)
+    }
+}
+
+private val colorEnRuta = Color(0xFF1B5E20)
+private val colorDesvio = Color(0xFF8A4B00)
+
+/**
+ * Resultado de validar el rumbo del MPU contra la ruta. Solo informa: la corrección la da el
+ * buzzer del dispositivo con las letras que le envía la app.
+ */
+@Composable
+private fun TarjetaValidacion(sesion: EstadoSesionGuia) {
+    val validacion = sesion.validacion ?: return
+    val conectado = sesion.esp32.conectado
+    Tarjeta {
+        Text("Rumbo validado con el MPU", fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        val (texto, color) = when (validacion.estado) {
+            EstadoValidacion.EN_RUTA -> "Vas por la ruta correcta (A)" to colorEnRuta
+            EstadoValidacion.DESVIADO -> {
+                val lado = if (validacion.indicacion?.letra == 'L') "L" else "R"
+                val grados = validacion.errorRumboGrados?.let { " de ${kotlin.math.abs(it).roundToInt()}°" } ?: ""
+                "Desvío$grados: el dispositivo corrige con $lado" to colorDesvio
+            }
+            EstadoValidacion.SIN_MPU ->
+                if (conectado && !sesion.simulacion) "Esperando el rumbo del MPU…" to Color.DarkGray
+                else "Sin garantía de rumbo: el dispositivo no está conectado. " +
+                        "Solo se marca la posición con el GPS del teléfono." to colorDesvio
+            EstadoValidacion.SIN_POSICION -> "Esperando la posición…" to Color.DarkGray
+            EstadoValidacion.RUTA_TERMINADA -> "Destino alcanzado (F)" to colorEnRuta
+        }
+        Text(texto, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
+        validacion.desvioLateralMetros?.takeIf { kotlin.math.abs(it) >= 1.0 }?.let {
+            Text(
+                "A ${kotlin.math.abs(it).roundToInt()} m ${if (it > 0) "a la derecha" else "a la izquierda"} de la línea de la ruta",
+                color = Color.DarkGray
+            )
+        }
+        if (sesion.esp32BuscandoSatelites) {
+            Text(
+                "El dispositivo está buscando satélites; mientras tanto se usa el GPS del teléfono.",
+                color = Color.DarkGray
+            )
+        }
     }
 }
 
@@ -278,8 +323,10 @@ private fun TarjetaDispositivo(sesion: EstadoSesionGuia) {
 private fun describirLetra(letra: Char?): String = when (letra) {
     'L' -> "L (izquierda, 3 pitidos)"
     'R' -> "R (derecha, 1 pitido)"
-    'F' -> "F (rumbo correcto, sin pitidos)"
-    'H' -> "H (enlace activo, sin indicación)"
+    'A' -> "A (vas bien, sigue adelante)"
+    'N' -> "N (nodo alcanzado)"
+    'F' -> "F (destino final)"
+    'H' -> "H (latido: conexión abierta, sin indicación)"
     else -> "ninguna todavía"
 }
 
@@ -316,7 +363,7 @@ private fun TarjetaSimulacion(sesion: EstadoSesionGuia) {
     Tarjeta {
         FilaInterruptor(
             titulo = "Modo simulación",
-            subtitulo = "Recorre la ruta sin caminar, para probar sin GPS. Si el dispositivo está conectado, recibe L/R/F.",
+            subtitulo = "Recorre la ruta sin caminar, para probar sin GPS. Si el dispositivo está conectado, recibe L/R/A, N y F.",
             activo = sesion.simulacion,
             alCambiar = { SesionGuia.cambiarSimulacion(contexto, it) }
         )

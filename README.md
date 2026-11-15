@@ -31,15 +31,18 @@ Reparto de tareas:
 
 - **Dispositivo EcoGuía (ESP32):** guía a la persona con el buzzer. Envía su GPS (NEO-7M) y el
   rumbo del MPU9250.
-- **App:** no da indicaciones a la persona. Muestra la ruta en el mapa y el progreso, calcula si
-  la persona se desvió y le responde al dispositivo con `L`/`R`/`F`. Envía al encargado la
-  ubicación del **GPS del teléfono** cada 10 s.
+- **App:** no da indicaciones a la persona. Muestra la ruta en el mapa y el progreso, valida con
+  el MPU si la persona sigue la ruta y le responde al dispositivo con `L`/`R`/`A`, `N` al alcanzar
+  un nodo y `F` al llegar. Envía al encargado la ubicación del **GPS del teléfono** cada 10 s.
+- **Sin el dispositivo conectado** solo se marca la posición con el GPS del teléfono: sin MPU no
+  hay validación del rumbo ni corrección, y la pantalla lo indica ("Sin garantía de rumbo").
 
 | Pieza | Archivo |
 |---|---|
 | Constantes (umbrales, tiempos, nombre del ESP32, UUID SPP) | `guia/ConfigGuia.kt` |
 | Distancia Haversine y rumbo | `guia/Haversine.kt` |
-| Respuesta L/R/F para el dispositivo (umbral ±20°) | `guia/DireccionRelativa.kt` |
+| Letras L/R/A y avisos N/F | `guia/DireccionRelativa.kt` |
+| Validación del rumbo del MPU contra la ruta | `guia/ValidadorRumbo.kt` |
 | Tiempo total/restante (velocidad configurable, 1.2 m/s por defecto) | `guia/EstimadorTiempo.kt` |
 | Avance por nodos, obstáculos, progreso | `guia/MotorGuia.kt` |
 | Elección de fuente de posición/rumbo | `guia/SelectorFuente.kt` |
@@ -60,6 +63,24 @@ Reparto de tareas:
    "Compartir ubicación" ya está activo, el servicio de la ruta no la envía de nuevo.
 
 El cambio de fuente no reinicia la ruta ni el progreso.
+
+### Validación del rumbo (`ValidadorRumbo`)
+
+No es un modelo entrenado (no hay datos de recorridos para entrenarlo), sino un filtro de reglas
+que evita pitidos por ruido del MPU o del GPS. Cada 250 ms:
+
+1. Toma el tramo actual (último nodo alcanzado → nodo objetivo) y apunta a un punto 8 m por
+   delante sobre ese tramo. Así también corrige si la persona se apartó de la línea aunque mire
+   hacia el nodo.
+2. Anticipa el rumbo con el giro del MPU (`giro` × 0.5 s, máx. ±45°): si ya está girando hacia la
+   ruta, no se le corrige.
+3. Compara con el rumbo hacia ese punto: más de 20° a un lado → `L` o `R`; vuelve a `A` cuando
+   baja de 12° (histéresis).
+4. Un cambio de letra debe repetirse dos cálculos seguidos (0.5 s), salvo que vaya a más de 90°
+   de la ruta.
+
+Al alcanzar un nodo se envía `N` (o `F` si es el destino) y la validación empieza de cero con el
+tramo siguiente.
 
 ### Obstáculos
 
@@ -89,8 +110,16 @@ Protocolo (texto, cada mensaje termina en `\n`):
 |---|---|---|
 | ESP32 → app | `Y,rumbo,giro` | `rumboMagnetico()` y `mpu.getGyroZ()`, 10 Hz en `MODO_APP` |
 | ESP32 → app | `P,latitud,longitud[,fix]` | Posición del NEO-7M; `fix` = 1 válido, 0 sin fix. Sin `fix` se toma como válida; `0,0` se toma como sin fix; los campos extra se ignoran |
-| app → ESP32 | `L` / `R` / `F` | Izquierda (3 pitidos) / derecha (1 pitido) / rumbo correcto (silencio). Se envía al cambiar y se repite cada 1 s como latido |
-| app → ESP32 | `H` | Latido cada 1 s cuando aún no hay indicación |
+| app → ESP32 | `L` / `R` / `A` | Gira a la izquierda / gira a la derecha / vas bien, sigue adelante. Se envía al cambiar y se repite cada 1 s como latido |
+| app → ESP32 | `N` | Nodo alcanzado (una vez) |
+| app → ESP32 | `F` | Destino final (una vez; si no se pudo enviar, al reconectar) |
+| app → ESP32 | `H` | Latido opcional cada 1 s cuando no hay letra de estado (sin MPU o ruta terminada) |
+
+Tras `N` o `F` la app deja de escribir 1.2 s para que el buzzer termine el aviso (menos que los
+3 s tras los que el firmware da la app por perdida) y luego reenvía la letra de estado.
+
+El ESP32 no envía `P` hasta encontrar satélites. Mientras tanto la app usa el GPS del teléfono para
+la posición y el rumbo del MPU para validar, y muestra "El dispositivo está buscando satélites".
 
 **Firmware:** según el fragmento de `MODO_APP` compartido, el ESP32 envía `Y` a 10 Hz, pita
 con `L`/`R` y, tras 3 s sin mensajes de la app, avisa y vuelve a su modo GPS propio. Repetir la
@@ -98,16 +127,16 @@ letra vigente como latido mantiene ese enlace activo y no cambia el estado del b
 el firmware tome cualquier carácter recibido como `estadoGuia`. **Falta confirmar en el firmware
 completo:**
 
-- cómo y con qué formato envía `P`;
-- cómo trata la `H`;
+- con qué formato envía `P`;
+- los patrones del buzzer para `A`, `N` y `F`, y cómo trata la `H`;
 - si vuelve a `MODO_APP` cuando la app reconecta.
 
 ## Simulación (sin ESP32 ni GPS real)
 
 En la ruta en curso, activar el interruptor **"Modo simulación"** (o poner
 `ConfigGuia.SIMULACION_ACTIVA_POR_DEFECTO = true`). Se recorre la ruta a la velocidad configurada,
-con un rumbo que oscila ±35°. Si el dispositivo está conectado, recibe `L`, `R` y `F` y se puede
-oír el buzzer; la tarjeta del dispositivo muestra la última letra enviada. En simulación se
+con un rumbo que oscila ±35°. Si el dispositivo está conectado, recibe `L`/`R`/`A`, `N` y `F` y
+se puede oír el buzzer; la tarjeta del dispositivo muestra la última letra enviada. En simulación se
 comparte con el encargado la posición simulada.
 
 ## Permisos

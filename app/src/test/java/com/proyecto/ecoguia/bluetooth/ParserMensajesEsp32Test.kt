@@ -47,7 +47,7 @@ class ParserMensajesEsp32Test {
     fun elLatidoRepiteLaIndicacionVigente() {
         assertEquals("L", ParserMensajesEsp32.mensajeLatido(Indicacion.IZQUIERDA))
         assertEquals("R", ParserMensajesEsp32.mensajeLatido(Indicacion.DERECHA))
-        assertEquals("F", ParserMensajesEsp32.mensajeLatido(Indicacion.RECTO))
+        assertEquals("A", ParserMensajesEsp32.mensajeLatido(Indicacion.RECTO))
         assertEquals("H", ParserMensajesEsp32.mensajeLatido(null))
     }
 

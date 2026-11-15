@@ -57,7 +57,9 @@ class DireccionRelativaTest {
     fun letrasDelProtocolo() {
         assertEquals('L', Indicacion.IZQUIERDA.letra)
         assertEquals('R', Indicacion.DERECHA.letra)
-        assertEquals('F', Indicacion.RECTO.letra)
+        assertEquals('A', Indicacion.RECTO.letra)
+        assertEquals('N', AvisoRuta.NODO_ALCANZADO.letra)
+        assertEquals('F', AvisoRuta.DESTINO_FINAL.letra)
     }
 
     @Test

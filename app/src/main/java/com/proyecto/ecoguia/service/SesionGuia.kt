@@ -6,6 +6,7 @@ import androidx.core.content.ContextCompat
 import com.proyecto.ecoguia.bluetooth.ConexionEsp32Estado
 import com.proyecto.ecoguia.guia.EstadoGuia
 import com.proyecto.ecoguia.guia.FuentesElegidas
+import com.proyecto.ecoguia.guia.ResultadoValidacion
 import com.proyecto.ecoguia.guia.RutaGuia
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,8 +25,12 @@ data class EstadoSesionGuia(
     val esp32: ConexionEsp32Estado = ConexionEsp32Estado(),
     val fuentes: FuentesElegidas? = null,
     val dispositivoActivo: Boolean = true,
-    /** Última letra (L, R, F o H) escrita al ESP32 mientras está conectado. */
+    /** Última letra (L, R, A, N, F o H) escrita al ESP32 mientras está conectado. */
     val ultimaLetraEsp32: Char? = null,
+    /** Resultado de validar el rumbo del MPU contra la ruta; SIN_MPU si el dispositivo no lo envía. */
+    val validacion: ResultadoValidacion? = null,
+    /** Dispositivo conectado pero sin posición del NEO-7M todavía (buscando satélites). */
+    val esp32BuscandoSatelites: Boolean = false,
     val gpsTelefonoDisponible: Boolean = true,
     val guia: EstadoGuia? = null,
     /** Hora (System.currentTimeMillis) del último envío correcto a posiciones_usuario. */

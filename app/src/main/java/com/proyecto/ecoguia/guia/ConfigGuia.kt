@@ -39,6 +39,27 @@ object ConfigGuia {
     /** Velocidad angular (°/s) a partir de la cual se considera que la persona está girando. */
     const val UMBRAL_GIRO_GRADOS_SEGUNDO = 30.0
 
+    /** Tras una corrección L/R, se vuelve a "A" cuando la diferencia baja de este valor (histéresis). */
+    const val UMBRAL_REGRESO_RECTO_GRADOS = 12.0
+
+    /** Diferencia a partir de la cual la corrección se envía sin esperar confirmación (va en otra dirección). */
+    const val UMBRAL_CORRECCION_INMEDIATA_GRADOS = 90.0
+
+    /** Segundos que se anticipa el rumbo con el giro del MPU: si ya está girando hacia la ruta, no se corrige. */
+    const val ANTICIPACION_GIRO_SEGUNDOS = 0.5
+
+    /** Máximo que puede mover el rumbo la anticipación del giro. */
+    const val LIMITE_ANTICIPACION_GRADOS = 45.0
+
+    /** Distancia por delante sobre el tramo hacia la que se apunta (devuelve a la ruta si se apartó). */
+    const val DISTANCIA_OBJETIVO_TRAMO_METROS = 8.0
+
+    /** Cálculos seguidos (cada 250 ms) que debe repetirse un cambio de L/R/A antes de enviarlo. */
+    const val CALCULOS_CONFIRMACION = 2
+
+    /** Pausa en las letras de estado tras N o F, para que el buzzer termine ese aviso (< 3 s del firmware). */
+    const val PAUSA_TRAS_AVISO_MS = 1_200L
+
     /** Velocidad de caminata usada para estimar tiempos. */
     const val VELOCIDAD_CAMINATA_POR_DEFECTO_MS = 1.2
 
