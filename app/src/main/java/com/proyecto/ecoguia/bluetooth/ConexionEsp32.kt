@@ -110,12 +110,17 @@ class ConexionEsp32(
 
     /** Envía N o F una sola vez. Tras el aviso se vuelve a enviar la letra de estado vigente. */
     fun enviarAviso(aviso: AvisoRuta) {
-        if (escribirLinea(aviso.letra.toString())) {
-            if (aviso == AvisoRuta.DESTINO_FINAL) destinoFinalPendiente = false
+        // La pausa se marca antes de escribir y bajo el mismo bloqueo que el latido,
+        // para que el latido no pise el aviso con la letra anterior.
+        synchronized(bloqueoEscritura) {
             pausaHastaMs = SystemClock.elapsedRealtime() + ConfigGuia.PAUSA_TRAS_AVISO_MS
-            ultimaIndicacionEnviada = null
-        } else if (aviso == AvisoRuta.DESTINO_FINAL) {
-            destinoFinalPendiente = true
+            if (escribirLinea(aviso.letra.toString())) {
+                if (aviso == AvisoRuta.DESTINO_FINAL) destinoFinalPendiente = false
+                ultimaIndicacionEnviada = null
+            } else {
+                pausaHastaMs = 0L
+                if (aviso == AvisoRuta.DESTINO_FINAL) destinoFinalPendiente = true
+            }
         }
     }
 
@@ -198,7 +203,8 @@ class ConexionEsp32(
 
         val latido = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                if (!enPausa() && !escribirLinea(mensajeLatido())) break
+                val enviado = synchronized(bloqueoEscritura) { enPausa() || escribirLinea(mensajeLatido()) }
+                if (!enviado) break
                 delay(ConfigGuia.INTERVALO_LATIDO_MS)
             }
         }
