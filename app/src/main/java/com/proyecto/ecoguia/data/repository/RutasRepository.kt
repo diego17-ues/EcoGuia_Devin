@@ -37,7 +37,9 @@ data class RutaDisponible(
     val nombre: String,
     val descripcion: String? = null,
     val nodos: List<NodoRuta> = emptyList(),
-    val distanciaMetros: Double? = null
+    val distanciaMetros: Double? = null,
+    // Longitud de cada tramo nodos[i] -> nodos[i + 1] según aristas.distancia_m (null si falta).
+    val distanciasTramosMetros: List<Double?> = emptyList()
 )
 
 @Serializable
@@ -45,7 +47,8 @@ data class NodoRuta(
     val id: Long,
     val nombre: String,
     val latitud: Double,
-    val longitud: Double
+    val longitud: Double,
+    val tipo: String = ""
 )
 
 @Serializable
@@ -54,14 +57,16 @@ private data class NodoRutaOrdenFila(
     val ruta_id: Long,
     val nombre: String,
     val latitud: Double,
-    val longitud: Double
+    val longitud: Double,
+    val tipo: String = ""
 )
 
 @Serializable
 private data class AristaRutaFila(
     val ruta_id: Long,
     val origen: Long,
-    val destino: Long
+    val destino: Long,
+    val distancia_m: Double? = null
 )
 
 class RutasRepository {
@@ -104,10 +109,12 @@ class RutasRepository {
                 nodosPorRuta[ruta.id].orEmpty(),
                 aristasPorRuta[ruta.id].orEmpty()
             )
+            val distanciasTramos = distanciasTramos(ordenados, aristasPorRuta[ruta.id].orEmpty())
             ruta.copy(
                 nodos = ordenados,
                 distanciaMetros = ordenados.takeIf { it.size >= 2 }
-                    ?.let(::distanciaTotalMetros)
+                    ?.let { distanciaTotalMetros(it, distanciasTramos) },
+                distanciasTramosMetros = distanciasTramos
             )
         }
     }
@@ -144,12 +151,26 @@ class RutasRepository {
             return emptyList()
         }
         return recorrido.map {
-            NodoRuta(it.id, it.nombre, it.latitud, it.longitud)
+            NodoRuta(it.id, it.nombre, it.latitud, it.longitud, it.tipo)
         }
     }
 
-    private fun distanciaTotalMetros(nodos: List<NodoRuta>): Double =
-        nodos.zipWithNext().sumOf { (desde, hasta) ->
+    private fun distanciasTramos(
+        nodos: List<NodoRuta>,
+        aristas: List<AristaRutaFila>
+    ): List<Double?> {
+        val porTramo = aristas.associateBy { it.origen to it.destino }
+        return nodos.zipWithNext().map { (desde, hasta) ->
+            porTramo[desde.id to hasta.id]?.distancia_m
+        }
+    }
+
+    // Usa aristas.distancia_m cuando existe y, si falta, la distancia geodésica entre nodos.
+    private fun distanciaTotalMetros(nodos: List<NodoRuta>, distanciasTramos: List<Double?>): Double =
+        nodos.zipWithNext().withIndex().sumOf { (indice, tramo) ->
+            val (desde, hasta) = tramo
+            distanciasTramos.getOrNull(indice)?.takeIf { it.isFinite() && it >= 0.0 }
+                ?.let { return@sumOf it }
             val resultado = FloatArray(1)
             Location.distanceBetween(
                 desde.latitud,

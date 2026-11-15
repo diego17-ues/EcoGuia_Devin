@@ -75,7 +75,7 @@ fun CompartirUbicacionCard() {
             text = {
                 Text(
                     "EcoGuía enviará tu ubicación y precisión a tu encargado " +
-                            "vinculado cada 30 segundos. El servicio seguirá activo " +
+                            "vinculado cada 10 segundos. El servicio seguirá activo " +
                             "con la pantalla apagada y puedes detenerlo cuando quieras. " +
                             "Android mostrará una notificación neutra mientras el servicio esté activo."
                 )

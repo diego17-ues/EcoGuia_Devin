@@ -38,8 +38,8 @@ private data class PosicionParaGuardar(
     val usuario_id: String,
     val latitud: Double,
     val longitud: Double,
-    val precision_metros: Float,
-    val fecha: String
+    val precision_metros: Float?,
+    val actualizado_utc: String
 )
 
 @Serializable
@@ -76,8 +76,8 @@ private data class PosicionSeguimientoFila(
     val usuario_id: String,
     val latitud: Double,
     val longitud: Double,
-    val precision_metros: Float,
-    val fecha: String
+    val precision_metros: Float? = null,
+    val actualizado_utc: String
 )
 
 @Serializable
@@ -309,7 +309,7 @@ class SeguimientoRepository {
                 latitud = coordenada.latitud,
                 longitud = coordenada.longitud,
                 precision_metros = coordenada.precisionMetros,
-                fecha = fecha
+                actualizado_utc = fecha
             )
         ) {
             onConflict = "usuario_id"
@@ -479,13 +479,13 @@ class SeguimientoRepository {
                     usuarioId = persona.id,
                     nombre = persona.nombre_completo,
                     activo = estado != null,
-                    actualizadoUtc = posicion?.fecha ?: estado?.iniciado_utc,
+                    actualizadoUtc = posicion?.actualizado_utc ?: estado?.iniciado_utc,
                     posicion = posicion?.let {
                         PosicionSeguimientoFilaPublica(
                             latitud = it.latitud,
                             longitud = it.longitud,
-                            precisionMetros = it.precision_metros,
-                            fecha = it.fecha
+                            precisionMetros = it.precision_metros ?: 0f,
+                            fecha = it.actualizado_utc
                         )
                     },
                     ruta = rutas[persona.id]
