@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 import com.mapbox.common.MapboxOptions
+import com.proyecto.ecoguia.service.SesionGuia
 import com.proyecto.ecoguia.data.repository.AuthRepository
 import com.proyecto.ecoguia.screen.*
 import com.proyecto.ecoguia.ui.theme.EcoGuiaTheme
@@ -582,6 +583,7 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onSeleccionarRuta = { _, seguimientoId ->
                                     seguimientoIdActual = seguimientoId
+                                    SesionGuia.cambiarRuta(contexto, seguimientoId)
                                     pantalla = "principal_ciego"
                                 },
                                 onAjustesClick = {
