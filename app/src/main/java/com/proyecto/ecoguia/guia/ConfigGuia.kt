@@ -27,6 +27,12 @@ object ConfigGuia {
     /** Una posición del GPS del teléfono se considera vigente durante este tiempo. */
     const val VIGENCIA_POSICION_TELEFONO_MS = 10_000L
 
+    /**
+     * El rumbo `Y` del MPU9250 se toma como magnético y se corrige con la declinación local para
+     * compararlo con el rumbo geográfico al nodo. Poner en false si el firmware ya lo corrige.
+     */
+    const val RUMBO_ESP32_ES_MAGNETICO = true
+
     /** Diferencia máxima (en grados, a cada lado) para indicar "seguir recto". */
     const val UMBRAL_RECTO_GRADOS = 20.0
 

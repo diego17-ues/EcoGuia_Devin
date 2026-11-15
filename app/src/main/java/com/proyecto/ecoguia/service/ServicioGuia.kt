@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.hardware.GeomagneticField
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
@@ -27,6 +28,7 @@ import com.proyecto.ecoguia.guia.ConfigGuia
 import com.proyecto.ecoguia.guia.Coordenada
 import com.proyecto.ecoguia.guia.EntradasGuia
 import com.proyecto.ecoguia.guia.EstimadorTiempo
+import com.proyecto.ecoguia.guia.Haversine
 import com.proyecto.ecoguia.guia.Lectura
 import com.proyecto.ecoguia.guia.MotorGuia
 import com.proyecto.ecoguia.guia.PosicionEsp32
@@ -238,13 +240,27 @@ class ServicioGuia : Service() {
     private fun alRecibirEsp32(mensaje: MensajeEsp32) {
         val ahora = SystemClock.elapsedRealtime()
         when (mensaje) {
-            is MensajeEsp32.Rumbo -> rumboEsp32 = Lectura(mensaje.rumboGrados, ahora)
+            is MensajeEsp32.Rumbo -> rumboEsp32 = Lectura(rumboGeografico(mensaje.rumboGrados), ahora)
             is MensajeEsp32.Posicion -> posicionEsp32 = Lectura(
                 PosicionEsp32(Coordenada(mensaje.latitud, mensaje.longitud), mensaje.fixValido),
                 ahora
             )
             is MensajeEsp32.Invalido -> Unit
         }
+    }
+
+    private fun rumboGeografico(rumboMagnetico: Double): Double {
+        if (!ConfigGuia.RUMBO_ESP32_ES_MAGNETICO) return rumboMagnetico
+        val referencia = posicionEsp32?.valor?.takeIf { it.fixValido }?.coordenada
+            ?: posicionTelefono?.valor?.aCoordenada()
+            ?: return rumboMagnetico
+        val declinacion = GeomagneticField(
+            referencia.latitud.toFloat(),
+            referencia.longitud.toFloat(),
+            0f,
+            System.currentTimeMillis()
+        ).declination
+        return Haversine.normalizarRumbo(rumboMagnetico + declinacion)
     }
 
     private fun cambiarSimulacion(activa: Boolean) {
