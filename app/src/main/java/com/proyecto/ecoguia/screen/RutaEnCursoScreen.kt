@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
@@ -38,6 +42,7 @@ import com.proyecto.ecoguia.data.repository.NodoRuta
 import com.proyecto.ecoguia.data.repository.RutaActivaUsuario
 import com.proyecto.ecoguia.data.repository.RutaDisponible
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
+import com.proyecto.ecoguia.service.SesionGuia
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -62,11 +67,35 @@ fun RutaEnCursoScreen(
     var mostrarConfirmacionCancelacion by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val contexto = LocalContext.current
+    val sesion by SesionGuia.estado.collectAsState()
+    var faltanPermisos by remember { mutableStateOf(permisosGuiaFaltantes(contexto).isNotEmpty()) }
+    var avisoPermisos by remember { mutableStateOf<String?>(null) }
+
+    val lanzadorPermisos = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        faltanPermisos = false
+        avisoPermisos = if (!tieneUbicacionPrecisa(contexto)) {
+            "Sin ubicación precisa no se puede iniciar la guía ni compartir tu posición. " +
+                    "Actívala en los permisos de la aplicación."
+        } else null
+    }
+
+    // La guía (servicio en primer plano) arranca cuando hay ruta activa y permiso de ubicación.
+    val seguimientoActivo = ruta?.seguimientoId
+    LaunchedEffect(seguimientoActivo, faltanPermisos) {
+        if (seguimientoActivo != null && !faltanPermisos && tieneUbicacionPrecisa(contexto)) {
+            SesionGuia.iniciar(contexto, seguimientoActivo)
+        }
+    }
 
     LaunchedEffect(repository) {
         while (isActive) {
             try {
                 ruta = repository.obtenerRutaActivaUsuario()
+                // Si la ruta terminó desde otra pantalla, también se detiene la guía.
+                if (ruta == null) SesionGuia.detener(contexto)
                 error = null
             } catch (e: Exception) {
                 error = e.localizedMessage ?: "No se pudo cargar la ruta en curso."
@@ -98,12 +127,21 @@ fun RutaEnCursoScreen(
                 else -> {
                     val actual = ruta!!
                     Text(actual.nombreRuta, fontWeight = FontWeight.Bold)
+                    if (faltanPermisos) {
+                        TarjetaPermisosGuia { lanzadorPermisos.launch(permisosGuia()) }
+                    }
+                    avisoPermisos?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    sesion.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (sesion.activa || sesion.cargando) {
+                        PanelGuiaRuta(sesion)
+                    }
                     Text("Progreso: ${actual.progresoPorcentaje}%")
-                    Text(
+                    // Datos guardados en Supabase (se refrescan cada 10 s); la guía en vivo está arriba.
+                    if (!sesion.activa) Text(
                         actual.siguienteNodoNombre?.let { "Siguiente punto: $it" }
                             ?: "Has llegado al último punto de la ruta."
                     )
-                    Text(
+                    if (!sesion.activa) Text(
                         actual.distanciaSiguienteNodoMetros?.let {
                             "Distancia hasta el siguiente punto: ${formatearDistancia(it)}"
                         } ?: "Distancia hasta el siguiente punto: No disponible"
@@ -124,6 +162,7 @@ fun RutaEnCursoScreen(
                                     val seguimientoId = ruta?.seguimientoId
                                         ?: seguimientoIdInicial
                                         ?: throw IllegalStateException("No hay un seguimiento activo para finalizar.")
+                                    SesionGuia.detener(contexto)
                                     repository.finalizarRuta(seguimientoId)
                                     onFinalizada()
                                 } catch (e: CancellationException) {
@@ -185,6 +224,7 @@ fun RutaEnCursoScreen(
                                 val seguimientoId = ruta?.seguimientoId
                                     ?: seguimientoIdInicial
                                     ?: throw IllegalStateException("No hay un seguimiento activo para cancelar.")
+                                SesionGuia.detener(contexto)
                                 repository.detenerRuta(seguimientoId)
                                 mostrarConfirmacionCancelacion = false
                                 onFinalizada()

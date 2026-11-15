@@ -5,9 +5,23 @@ create table if not exists public.posiciones_usuario (
     usuario_id uuid primary key references public.usuarios(id) on delete cascade,
     latitud double precision not null check (latitud between -90 and 90),
     longitud double precision not null check (longitud between -180 and 180),
-    precision_metros real not null check (precision_metros >= 0),
-    fecha timestamptz not null default now()
+    precision_metros real check (precision_metros >= 0),
+    actualizado_utc timestamptz not null default now()
 );
+
+-- Bases creadas con una versión anterior de este script usaban la columna "fecha".
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'posiciones_usuario' and column_name = 'fecha'
+    ) and not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'posiciones_usuario' and column_name = 'actualizado_utc'
+    ) then
+        alter table public.posiciones_usuario rename column fecha to actualizado_utc;
+    end if;
+end $$;
 
 alter table public.posiciones_usuario enable row level security;
 alter table public.seguimientos enable row level security;

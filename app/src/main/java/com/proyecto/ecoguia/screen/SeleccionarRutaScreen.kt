@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -45,6 +46,8 @@ import androidx.compose.ui.unit.sp
 import android.util.Log
 import com.proyecto.ecoguia.components.AsistenteVozCard
 import com.proyecto.ecoguia.data.repository.RutaDisponible
+import com.proyecto.ecoguia.guia.EstimadorTiempo
+import com.proyecto.ecoguia.guia.PreferenciasGuia
 import com.proyecto.ecoguia.data.repository.RutasRepository
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
 import com.proyecto.ecoguia.navigation.BottomNavItem
@@ -133,9 +136,13 @@ fun SeleccionarRutaScreen(
                     fontWeight = FontWeight.Bold,
                     color = tintaRuta
                 )
+                val velocidad = PreferenciasGuia.velocidad(LocalContext.current)
                 Text(
-                    // TODO: el esquema actual no contiene duración ni velocidad para calcular una ETA fiable.
-                    text = "Tiempo estimado de llegada: No disponible",
+                    // Distancia por aristas.distancia_m (o Haversine) a la velocidad de caminata configurada.
+                    text = ruta.distanciaMetros?.let {
+                        "Tiempo estimado de llegada: " +
+                                EstimadorTiempo.formatear(EstimadorTiempo(velocidad).segundosPara(it))
+                    } ?: "Tiempo estimado de llegada: No disponible",
                     modifier = Modifier.padding(top = 3.dp),
                     color = Color.DarkGray
                 )

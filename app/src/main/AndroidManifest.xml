@@ -14,9 +14,20 @@
 
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!-- La app no escanea (usa dispositivos ya emparejados); se declara porque Android 12+ lo pide junto a CONNECT. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Guía y rastreo en segundo plano mediante servicios en primer plano con notificación visible. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
 
     <application
@@ -38,6 +49,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.ServicioGuia"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <service
+            android:name=".service.ServicioSeguimiento"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 
 </manifest>

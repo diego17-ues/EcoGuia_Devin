@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.proyecto.ecoguia.data.repository.RutaActivaUsuario
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
+import com.proyecto.ecoguia.service.SesionGuia
+import androidx.compose.ui.platform.LocalContext
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -47,6 +49,7 @@ fun RutaActualCard(
     onRutaFinalizada: () -> Unit
 ) {
     val repository = remember { SeguimientoRepository() }
+    val contexto = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var finalizando by remember { mutableStateOf(false) }
@@ -111,6 +114,7 @@ fun RutaActualCard(
                                     finalizando = true
                                     error = null
                                     try {
+                                        SesionGuia.detener(contexto)
                                         repository.finalizarRuta(ruta.seguimientoId)
                                         onRutaFinalizada()
                                     } catch (e: CancellationException) {
