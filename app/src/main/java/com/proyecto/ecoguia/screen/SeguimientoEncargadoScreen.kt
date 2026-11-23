@@ -2,6 +2,7 @@ package com.proyecto.ecoguia.screen
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.location.Location
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -55,6 +56,7 @@ import com.proyecto.ecoguia.R
 import com.proyecto.ecoguia.data.repository.PersonaEnSeguimiento
 import com.proyecto.ecoguia.data.repository.SeguimientoEncargadoSnapshot
 import com.proyecto.ecoguia.data.repository.SeguimientoRepository
+import com.proyecto.ecoguia.guia.EstimadorTiempo
 import com.proyecto.ecoguia.navigation.BottomNavItem
 import com.proyecto.ecoguia.navigation.EcoGuiaNavigationBar
 import kotlinx.coroutines.CancellationException
@@ -62,6 +64,7 @@ import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private const val CAMPUS_UES_LATITUD = 13.718
 private const val CAMPUS_UES_LONGITUD = -89.203
@@ -85,11 +88,13 @@ fun SeguimientoEncargadoScreen(
     }
 
     var snapshot by remember { mutableStateOf(SeguimientoEncargadoSnapshot()) }
+    var trazasPorPersona by remember { mutableStateOf<Map<String, List<Point>>>(emptyMap()) }
     var cargando by remember { mutableStateOf(true) }
     var errorRealtime by remember { mutableStateOf<String?>(null) }
     var personaSeleccionadaId by remember { mutableStateOf<String?>(null) }
     var mostrarUltimaUbicacion by remember { mutableStateOf(false) }
     var mostrarAvisoAyuda by remember { mutableStateOf(false) }
+    var solicitudRecarga by remember { mutableStateOf(0) }
     var mostrarPermisoUbicacion by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -124,9 +129,22 @@ fun SeguimientoEncargadoScreen(
                     resultados[Manifest.permission.ACCESS_COARSE_LOCATION] == true
     }
 
-    LaunchedEffect(repository) {
+    LaunchedEffect(repository, solicitudRecarga) {
         try {
             repository.observarSeguimientoEncargado().collect {
+                val trazasNuevas = trazasPorPersona.toMutableMap()
+                it.personas.forEach personaLoop@{ persona ->
+                    val posicion = persona.posicion ?: return@personaLoop
+                    val punto = Point.fromLngLat(posicion.longitud, posicion.latitud)
+                    val anteriores = trazasNuevas[persona.usuarioId].orEmpty()
+                    val ultimo = anteriores.lastOrNull()
+                    if (ultimo == null || ultimo.longitude() != punto.longitude() ||
+                        ultimo.latitude() != punto.latitude()
+                    ) {
+                        trazasNuevas[persona.usuarioId] = (anteriores + punto).takeLast(MAX_PUNTOS_TRAZA)
+                    }
+                }
+                trazasPorPersona = trazasNuevas
                 snapshot = it
                 cargando = false
                 errorRealtime = null
@@ -142,7 +160,7 @@ fun SeguimientoEncargadoScreen(
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(10_000L)
+            delay(5_000L)
             reloj = System.currentTimeMillis()
         }
     }
@@ -302,6 +320,16 @@ fun SeguimientoEncargadoScreen(
                 }
 
                 personasVisibles.forEach { persona ->
+                    val puntosTraza = trazasPorPersona[persona.usuarioId].orEmpty()
+                    if (puntosTraza.size >= 2) {
+                        PolylineAnnotation(points = puntosTraza) {
+                            lineColor = Color(0xFF2367D1)
+                            lineWidth = 4.0
+                        }
+                    }
+                }
+
+                personasVisibles.forEach { persona ->
                     val posicion = persona.posicion ?: return@forEach
                     PointAnnotation(
                         point = Point.fromLngLat(posicion.longitud, posicion.latitud)
@@ -363,6 +391,18 @@ fun SeguimientoEncargadoScreen(
                                 textAlign = TextAlign.Center
                             )
                         }
+                        if (!cargando) {
+                            Button(
+                                onClick = {
+                                    cargando = true
+                                    errorRealtime = null
+                                    solicitudRecarga += 1
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Recargar búsqueda")
+                            }
+                        }
                     }
                 }
             }
@@ -399,6 +439,8 @@ fun SeguimientoEncargadoScreen(
         if (personaActual != null) {
             PanelDetalleSeguimiento(
                 persona = personaActual,
+                reloj = reloj,
+                puntosTraza = trazasPorPersona[personaActual.usuarioId].orEmpty(),
                 onEnviarAyuda = { mostrarAvisoAyuda = true }
             )
         }
@@ -414,6 +456,8 @@ fun SeguimientoEncargadoScreen(
 @Composable
 private fun PanelDetalleSeguimiento(
     persona: PersonaEnSeguimiento,
+    reloj: Long,
+    puntosTraza: List<Point>,
     onEnviarAyuda: () -> Unit
 ) {
     val ruta = persona.ruta
@@ -456,7 +500,7 @@ private fun PanelDetalleSeguimiento(
             verticalAlignment = Alignment.CenterVertically
         ) {
             EtiquetaSeguimiento("Tiempo de llegada:")
-            EtiquetaSeguimiento("No disponible")
+            EtiquetaSeguimiento(estimarLlegada(persona, reloj))
         }
 
         Column(
@@ -477,6 +521,13 @@ private fun PanelDetalleSeguimiento(
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center
             )
+            Text(
+                text = "Recorrido observado en tiempo real desde que abriste el rastreo: " +
+                        "${puntosTraza.size} ubicaciones. " +
+                        "Actualización cada 5 segundos.",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center
+            )
             Button(
                 onClick = onEnviarAyuda,
                 modifier = Modifier.fillMaxWidth(),
@@ -489,6 +540,48 @@ private fun PanelDetalleSeguimiento(
             }
         }
     }
+}
+
+private fun estimarLlegada(persona: PersonaEnSeguimiento, ahoraMs: Long): String {
+    val ruta = persona.ruta ?: return "No disponible"
+    val posicion = persona.posicion ?: return "No disponible"
+    if (ruta.nodos.isEmpty()) return "No disponible"
+
+    val indiceUltimoNodo = ruta.ultimoNodoId?.let { id ->
+        ruta.nodos.indexOfFirst { it.id == id }
+    } ?: -1
+    val indiceObjetivo = if (indiceUltimoNodo < 0) 0 else indiceUltimoNodo + 1
+    if (indiceObjetivo >= ruta.nodos.size) return "Destino alcanzado"
+
+    val objetivo = ruta.nodos[indiceObjetivo]
+    val distanciaRestante = distanciaMetros(
+        posicion.latitud,
+        posicion.longitud,
+        objetivo.latitud,
+        objetivo.longitud
+    ) + (indiceObjetivo until ruta.nodos.lastIndex).sumOf { indice ->
+        val desde = ruta.nodos[indice]
+        val hasta = ruta.nodos[indice + 1]
+        distanciaMetros(desde.latitud, desde.longitud, hasta.latitud, hasta.longitud)
+    }
+    val estimador = EstimadorTiempo()
+    val segundos = estimador.segundosPara(distanciaRestante)
+    val horaLlegada = Instant.ofEpochMilli(ahoraMs)
+        .plusSeconds(segundos)
+        .atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("h:mm a", Locale.forLanguageTag("es-SV")))
+    return "Aprox. $horaLlegada (${EstimadorTiempo.formatear(segundos)})"
+}
+
+private fun distanciaMetros(
+    latitudA: Double,
+    longitudA: Double,
+    latitudB: Double,
+    longitudB: Double
+): Double {
+    val resultado = FloatArray(1)
+    Location.distanceBetween(latitudA, longitudA, latitudB, longitudB, resultado)
+    return resultado[0].toDouble()
 }
 
 @Composable
@@ -512,3 +605,5 @@ private fun formatearFecha(fecha: String): String {
         .withZone(ZoneId.systemDefault())
     return formato.format(instante)
 }
+
+private const val MAX_PUNTOS_TRAZA = 100

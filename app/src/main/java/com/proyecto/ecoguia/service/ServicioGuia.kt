@@ -62,7 +62,7 @@ import kotlinx.coroutines.withContext
  *   llegar al destino, para que el buzzer guíe. La app no guía a la persona por sí misma.
  * - Sin el dispositivo conectado solo se marca la posición con el GPS del teléfono: sin MPU no
  *   hay validación del rumbo ni letras de corrección.
- * - Envía la posición del GPS del teléfono a posiciones_usuario cada 10 s, al cambiar de ruta y
+ * - Envía la posición del GPS del teléfono a posiciones_usuario cada 5 s, al cambiar de ruta y
  *   al terminar.
  * Sigue funcionando con la pantalla apagada mientras la notificación esté visible.
  */

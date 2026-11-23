@@ -100,7 +100,7 @@ internal fun TarjetaPermisosGuia(onConceder: () -> Unit) {
                 fontSize = 18.sp,
                 modifier = Modifier.semantics { heading() }
             )
-            Text("• Ubicación precisa: mostrar tu avance en la ruta y compartir tu posición con tu encargado cada 10 segundos.")
+            Text("• Ubicación precisa: mostrar tu avance en la ruta y compartir tu posición con tu encargado cada 5 segundos.")
             Text("• Dispositivos cercanos (Bluetooth): conectar con tu dispositivo EcoGuía, que te guía con su buzzer.")
             Text("• Notificaciones: mostrar que la ruta sigue activa con la pantalla apagada.")
             Button(
@@ -336,7 +336,7 @@ private fun TarjetaUbicacion(sesion: EstadoSesionGuia) {
         Text("Ubicación para tu encargado", fontWeight = FontWeight.Bold)
         Text(
             if (sesion.simulacion) "En simulación se comparte la posición simulada."
-            else "Se comparte el GPS del teléfono cada 10 segundos."
+            else "Se comparte el GPS del teléfono cada 5 segundos."
         )
         if (!sesion.gpsTelefonoDisponible) {
             Text("Sin permiso de ubicación: no se puede compartir tu posición.", color = MaterialTheme.colorScheme.error)

@@ -23,7 +23,9 @@ Compilar y probar:
 ```
 
 En Supabase ejecutar `supabase/seguimiento.sql` (RLS, función del encargado, Realtime y la
-tabla `posiciones_usuario` con `actualizado_utc`; renombra `fecha` si existía).
+tabla `posiciones_usuario` con `actualizado_utc`; renombra `fecha` si existía). Para aislar las
+rutas por cuenta y asignar automáticamente las nuevas, ejecutar también
+`supabase/rutas_por_usuario.sql`.
 
 ## Módulo de ruta y dispositivo
 
@@ -33,7 +35,7 @@ Reparto de tareas:
   rumbo del MPU9250.
 - **App:** no da indicaciones a la persona. Muestra la ruta en el mapa y el progreso, valida con
   el MPU si la persona sigue la ruta y le responde al dispositivo con `L`/`R`/`A`, `N` al alcanzar
-  un nodo y `F` al llegar. Envía al encargado la ubicación del **GPS del teléfono** cada 10 s.
+  un nodo y `F` al llegar. Envía al encargado la ubicación del **GPS del teléfono** cada 5 s.
 - **Sin el dispositivo conectado** solo se marca la posición con el GPS del teléfono: sin MPU no
   hay validación del rumbo ni corrección, y la pantalla lo indica ("Sin garantía de rumbo").
 
@@ -49,7 +51,7 @@ Reparto de tareas:
 | Simulación de recorrido | `guia/SimuladorRuta.kt` |
 | Protocolo, conexión y emparejamiento del ESP32 | `bluetooth/MensajesEsp32.kt`, `bluetooth/ConexionEsp32.kt`, `bluetooth/EmparejamientoEsp32.kt` |
 | GPS del teléfono | `sensores/SensoresTelefono.kt` |
-| Servicio en primer plano (progreso + rastreo cada 10 s) | `service/ServicioGuia.kt`, `service/SesionGuia.kt` |
+| Servicio en primer plano (progreso + rastreo cada 5 s) | `service/ServicioGuia.kt`, `service/SesionGuia.kt` |
 | Pantalla de la ruta en curso | `screen/PanelGuiaRuta.kt`, `screen/RutaEnCursoScreen.kt`, `screen/MapaRutaComposable.kt` |
 
 ### Validación del nodo de inicio (`ValidadorInicio`)

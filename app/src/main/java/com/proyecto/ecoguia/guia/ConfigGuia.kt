@@ -88,7 +88,7 @@ object ConfigGuia {
     const val INTERVALO_GPS_TELEFONO_MS = 1_000L
 
     /** Envío de la posición del teléfono a posiciones_usuario. */
-    const val INTERVALO_ENVIO_POSICION_MS = 10_000L
+    const val INTERVALO_ENVIO_POSICION_MS = 5_000L
 
     /** Paso del simulador de recorrido. */
     const val INTERVALO_SIMULACION_MS = 1_000L

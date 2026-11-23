@@ -211,16 +211,14 @@ fun CrearCuentaScreen(
             text = {
                 Text(
                     text = if (rol == "encargado") {
-                        "Solicitamos el registro en Supabase. " +
-                                "Si la cuenta es nueva, recibirás " +
-                                "un correo de confirmación. " +
+                        "Te enviaremos un correo para confirmar " +
+                                "tu cuenta. " +
                                 "Después inicia sesión con " +
                                 "tu usuario y contraseña."
                     } else {
-                        "Tu cuenta de persona no vidente " +
-                                "se registró en Supabase. " +
-                                "Ahora podrás ingresar utilizando " +
-                                "la biometría de este teléfono."
+                        "Tu cuenta está lista. Ya puedes iniciar " +
+                                "sesión con la huella digital " +
+                                "configurada en este teléfono."
                     }
                 )
             },
@@ -755,8 +753,8 @@ fun CrearCuentaScreen(
                                         ) {
                                             mostrarAviso(
                                                 "No se pudo crear la cuenta",
-                                                e.localizedMessage
-                                                    ?: "Comprueba tu conexión."
+                                                "No se pudo completar el registro. " +
+                                                        "Comprueba tu conexión e inténtalo de nuevo."
                                             )
                                         } finally {
                                             registrando = false

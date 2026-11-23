@@ -220,7 +220,7 @@ class ServicioSeguimiento : Service() {
     companion object {
         const val ACTION_INICIAR = "com.proyecto.ecoguia.action.INICIAR_SEGUIMIENTO"
         const val ACTION_DETENER = "com.proyecto.ecoguia.action.DETENER_SEGUIMIENTO"
-        private const val INTERVALO_ACTUALIZACION_MS = 10_000L
+        private const val INTERVALO_ACTUALIZACION_MS = 5_000L
         private const val CHANNEL_ID = "ecoguia_tracking_service"
         private const val NOTIFICATION_ID = 2301
     }
